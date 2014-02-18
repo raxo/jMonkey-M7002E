@@ -1,5 +1,7 @@
 
 
+import jme3tools.optimize.TextureAtlas;
+
 import com.jme3.app.SimpleApplication;
 import com.jme3.asset.TextureKey;
 import com.jme3.bullet.collision.shapes.PlaneCollisionShape;
@@ -15,6 +17,7 @@ import com.jme3.scene.Node;
 import com.jme3.scene.VertexBuffer.Type;
 import com.jme3.scene.shape.Box;
 import com.jme3.texture.Texture;
+import com.jme3.texture.Texture.WrapAxis;
 import com.jme3.texture.Texture.WrapMode;
 import com.jme3.util.BufferUtils;
 import com.jme3.util.SkyFactory;
@@ -159,35 +162,61 @@ public class SimpleScene extends SimpleApplication {
             vertices[9] = new Vector3f(hullLength,-hullHeight/3,-hullWidth/2); // right down
             vertices[10] = new Vector3f(hullLength,-hullHeight,0); // buttom
             
-            
             // Texture coordinates
-            Vector2f [] texCoord = new Vector2f[4];
-            texCoord[0] = new Vector2f(0,0);
-            texCoord[1] = new Vector2f(1,0);
-            texCoord[2] = new Vector2f(0,1);
-            texCoord[3] = new Vector2f(1,1);
+            Vector2f [] texCoord = new Vector2f[verticesNum];
+            texCoord[0] = new Vector2f(0.0f,0.0f);
+            texCoord[1] = new Vector2f(1/6f,1/6f);
+            texCoord[2] = new Vector2f(1/6f,1/6f);
+            texCoord[3] = new Vector2f(1/6f,1/6f);
+            texCoord[4] = new Vector2f(1/6f,1/6f);
+            texCoord[5] = new Vector2f(1/6f,1/6f);
+            texCoord[6] = new Vector2f(5/6f,5/6f);
+            texCoord[7] = new Vector2f(5/6f,5/6f);
+            texCoord[8] = new Vector2f(5/6f,5/6f);
+            texCoord[9] = new Vector2f(5/6f,5/6f);
+            texCoord[10] = new Vector2f(1,1);
             
             int [] indexesLeft = {
-            		1,3,0, // front up left
-            		0,5,1, // fron down left
-            		
-            		1,8,3, // side up left
-            		3,8,6, // side up left
-            		1,5,8, // side down left
-            		8,5,10, // side down left
-            		
-            		10,9,8, // back down
-            		8,9,7, // back up
-            		7,6,8, // backup
-            		
-            		//8,
-            		
-            		0,4,2, // front up right
-            		2,5,0, // front down right
-            		
+        		1,3,0, // front up left
+        		0,5,1, // front down left
+        		
+        		1,8,3, // side up left
+        		3,8,6, // side up left
+        		1,5,8, // side down left
+        		8,5,10, // side down left
+        		
+        		10,9,8, // back down
+        		8,9,7, // back up
+        		7,6,8, // back up
+        		
+        		4,7,2, // side up right
+        		2,7,9, // side up right
+        		9,10,2, // side down right
+        		2,10,5, // side down right
+        		
+        		0,4,2, // front up right
+        		2,5,0, // front down right
+        		
+        		0,3,4,
+        		4,6,7,
+        		6,4,3
     		};
+            float[] normals = new float[] {
+        		0,1,0,
+        		0,1,0,
+        		0,1,0,
+        		0,1,0,
+        		0,1,0,
+        		0,1,0,
+        		0,1,0,
+        		0,1,0,
+        		0,1,0,
+        		0,1,0,
+        		0,1,0
+            };
 
             // Setting buffers
+            m.setBuffer(Type.Normal, 3, BufferUtils.createFloatBuffer(normals));
             m.setBuffer(Type.Position, 3, BufferUtils.createFloatBuffer(vertices));
             m.setBuffer(Type.TexCoord, 2, BufferUtils.createFloatBuffer(texCoord));
             m.setBuffer(Type.Index, 1, BufferUtils.createIntBuffer(indexesLeft));
@@ -197,7 +226,14 @@ public class SimpleScene extends SimpleApplication {
             Geometry hull = new Geometry("OurMesh", m);
             hull.setLocalTranslation(new Vector3f(0,0,-waterDepth));
             Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-            mat.setColor("Color", ColorRGBA.Brown);
+            //mat.setColor("Color", ColorRGBA.Brown);
+            
+            
+            Texture t = assetManager.loadTexture("Textures/wood.jpg");
+    		//t.setWrap(WrapMode.Repeat);
+    		t.setWrap(WrapAxis.T, WrapMode.Repeat);
+            mat.setTexture("ColorMap", t);
+            
             hull.setMaterial(mat);
 
             // Attaching our geometry to the root node.
