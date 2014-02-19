@@ -1,21 +1,36 @@
 
+import java.io.IOException;
+
+import javax.vecmath.Matrix3f;
 
 import jme3tools.optimize.TextureAtlas;
 
 import com.jme3.app.SimpleApplication;
+import com.jme3.asset.AssetManager;
 import com.jme3.asset.TextureKey;
+import com.jme3.audio.AudioNode;
+import com.jme3.audio.LowPassFilter;
 import com.jme3.bullet.collision.shapes.PlaneCollisionShape;
+import com.jme3.export.InputCapsule;
+import com.jme3.export.JmeExporter;
+import com.jme3.export.JmeImporter;
+import com.jme3.export.OutputCapsule;
+import com.jme3.export.Savable;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.FastMath;
 import com.jme3.math.Plane;
+import com.jme3.math.Quaternion;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.post.FilterPostProcessor;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Mesh;
 import com.jme3.scene.Node;
+import com.jme3.scene.Spatial;
 import com.jme3.scene.VertexBuffer.Type;
 import com.jme3.scene.shape.Box;
+import com.jme3.scene.shape.Cylinder;
 import com.jme3.texture.Texture;
 import com.jme3.texture.Texture.WrapAxis;
 import com.jme3.texture.Texture.WrapMode;
@@ -33,7 +48,7 @@ public class SimpleScene extends SimpleApplication {
 	private FilterPostProcessor fpp;
 	private WaterFilter water;
 	private Vector3f lightDir = new Vector3f(-4.9f, -1.3f, 5.9f); // same as light source
-	private float initialWaterHeight = -1.8f; // choose a value for your scene
+	private Node floatingNode;
 	
     public static void main(String[] args){
     	SimpleScene app = new SimpleScene();
@@ -53,9 +68,17 @@ public class SimpleScene extends SimpleApplication {
     	water.setUseRipples(true);
     	fpp.addFilter(water);
     	water.setWaterColor(new ColorRGBA(0.0f,0.5f,0.5f,1.0f));
-    	water.setWaterTransparency(0.0f);
+    	water.setUseFoam(true);
+    	water.setWaterTransparency(1f);
+    	/*
+    	AudioNode waves = new AudioNode(assetManager, "Sounds/RowingBoat.wav", false);
+    	waves.setLooping(true);
+    	audioRenderer.playSource(waves);
+    	*/
     	viewPort.addProcessor(fpp);
     	
+    	flyCam.setMoveSpeed(10);
+    	cam.setLocation(new Vector3f(0,10,0));
  /*
         // create a blue box at coordinates (1,-1,1) 
         Box box1 = new Box(1,1,1);
@@ -92,47 +115,123 @@ public class SimpleScene extends SimpleApplication {
         
         //Mesh mesh = new Mesh();
         
-        new Ship(pivot).build();
+        floatingNode = new Node("floating");
+        rootNode.attachChild(floatingNode);
+        
+        Ship s = new Ship(floatingNode, "flagship");
+        s.setDimentions(10, 8, 25, 7);
+        s.build();
+        ((Ship) floatingNode.getChild("flagship").getUserData("class")).addFloor();
         
         // Attach
         // Rotate the pivot node: Note that both boxes have rotated! 
         //pivot.rotate(.4f,.4f,0f);
     }
     
-    class Ship {
+    private float time = 0.0f;
+    private float waterHeight = 0.0f;
+    private float initialWaterHeight = 0f;//0.8f;
+    private boolean uw = false;
+    //AudioNode waves;
+    
+    @Override
+    public void simpleUpdate(float tpf) {
+        super.simpleUpdate(tpf);
+        time += tpf;
+        waterHeight = (float) Math.cos(((time * 0.6f) % FastMath.TWO_PI)) * 1.5f;
+        water.setWaterHeight(initialWaterHeight + waterHeight);
+        
+        // move floating node up/down
+        Vector3f v = floatingNode.getLocalTranslation();
+        v.y = waterHeight;
+        floatingNode.setLocalTranslation(v);
+        if (water.isUnderWater() && !uw) {
+
+            //waves.setDryFilter(new LowPassFilter(0.5f, 0.1f));
+            uw = true;
+        }
+        if (!water.isUnderWater() && uw) {
+            uw = false;
+            //waves.setReverbEnabled(false);
+            //waves.setDryFilter(new LowPassFilter(1, 1f));
+            //waves.setDryFilter(new LowPassFilter(1,1f));
+
+        }
+    }
+    
+    class Ship implements Savable {
     	private Node parentNode, shipNode;
-    	private Material mat1;
     	
-    	private float hullHeight = 2.0f;
-    	private float hullWidth = 3.0f;
-    	private float hullLength = 10.0f;
-    	private float waterDepth = 1.0f;
+    	private float hullHeight = 7.0f;
+    	private float hullWidth = 5.0f;
+    	private float hullLength = 20.0f;
+    	private float waterDepth = 5.0f;
     	
-    	public Ship(Node parentNode) {
-			this.parentNode = parentNode;
-			shipNode = new Node();
-		} 
-    	private void build() {
+
+    	//private AssetManager assetManager;
+    	
+    	public Ship(Node parentNode, String id) {
+    		this.parentNode = parentNode;
+    		shipNode = new Node(id);
+    		shipNode.setUserData("class", this);
+    	}
+    	
+    	public void setDimentions(float hullHeight, float hullWidth, float hullLength, float waterDepth) {
+    		this.hullHeight = hullHeight;
+    		this.hullWidth = hullWidth;
+    		this.hullLength = hullLength;
+    		this.waterDepth = waterDepth;
+    	}
+    	
+    	public void build() {
     		//addFloor();
     		addHull();
+    		addMast(hullLength/4f);
+    		addMast(hullLength/2f);
     		this.parentNode.attachChild(shipNode);
     	}
+    	
+    	private void addMast(float lengthFromFront) {
+    		Spatial mastNode = shipNode.getChild("mast");
+    		if(mastNode != null && mastNode instanceof Node) {
+    			System.out.println("Instancing!");
+    			mastNode = (Node) mastNode.clone(true);
+    			System.out.println(lengthFromFront);
+	    		mastNode.setLocalTranslation(lengthFromFront, 0, 0);
+    		} else {
+    			System.out.println("Creating mast at x="+lengthFromFront);
+	    		Cylinder c = new Cylinder(16, 16, 0.5f, hullHeight*2, true);
+	    		Geometry mast = new Geometry("mast", c);
+	    		
+	    		Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+	    		mat.setColor("Color", ColorRGBA.Brown);
+	    		mast.setMaterial(mat);
+	    		
+	    		mast.setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/2 , new Vector3f(1,0,0) ));
+	    		mast.setLocalTranslation(new Vector3f(0, hullHeight, 0));
+	    		
+	    		mastNode = new Node("mast");
+	    		((Node) mastNode).attachChild(mast);
+	    		mastNode.setLocalTranslation(lengthFromFront, 0, 0);
+    		}
+    		this.shipNode.attachChild(mastNode);
+    	}
+    	
     	private void addFloor() {
     		//http://code.google.com/p/jmonkeyengine/source/browse/trunk/engine/src/test/jme3test/bullet/TestBrickWall.java
     		
     		Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-    		Texture t = assetManager.loadTexture("Textures/wood.jpg");
+    		Texture t = assetManager.loadTexture("Textures/wood2.jpg");
     		t.setWrap(WrapMode.Repeat);
             mat.setTexture("ColorMap", t);
     		
-    		Box floorBox = new Box(Vector3f.ZERO, hullLength, 0.1f, hullWidth);
+    		Box floorBox = new Box(Vector3f.ZERO, hullLength/2-hullLength/6, 0.1f, hullWidth/2);
             //floorBox.scaleTextureCoordinates(new Vector2f(3, 6));
 
             Geometry floor = new Geometry("floor", floorBox);
             floor.setMaterial(mat);
-            floor.setLocalTranslation(new Vector3f(0,0,hullHeight-waterDepth));
+            floor.setLocalTranslation(new Vector3f(hullLength/2,hullHeight-waterDepth+0.1f,0));
             //floor.setShadowMode(ShadowMode.Receive);
-            floor.setLocalTranslation(0, -0.1f, 0);
             //floor.addControl(new RigidBodyControl(new BoxCollisionShape(new Vector3f(10f, 0.1f, 5f)), 0));
             this.shipNode.attachChild(floor);
             //this.getPhysicsSpace().add(floor);
@@ -140,6 +239,8 @@ public class SimpleScene extends SimpleApplication {
     	}
     	private void addHull() {
     		// http://jmonkeyengine.googlecode.com/svn/branches/stable-alpha4/engine/src/test/jme3test/model/shape/TestCustomMesh.java
+    		
+    		
     		
     		Mesh m = new Mesh();
     		
@@ -203,15 +304,15 @@ public class SimpleScene extends SimpleApplication {
     		};
             float[] normals = new float[] {
         		0,1,0,
+        		0,0,1,
+        		0,0,-1,
         		0,1,0,
         		0,1,0,
+        		0,-1,0,
         		0,1,0,
         		0,1,0,
-        		0,1,0,
-        		0,1,0,
-        		0,1,0,
-        		0,1,0,
-        		0,1,0,
+        		0,0,1,
+        		0,0,-1,
         		0,1,0
             };
 
@@ -222,22 +323,42 @@ public class SimpleScene extends SimpleApplication {
             m.setBuffer(Type.Index, 1, BufferUtils.createIntBuffer(indexesLeft));
             m.updateBound();
             
-            // Creating a geometry, and apply a single color material to it
+            
             Geometry hull = new Geometry("OurMesh", m);
-            hull.setLocalTranslation(new Vector3f(0,0,-waterDepth));
             Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
             //mat.setColor("Color", ColorRGBA.Brown);
             
             
-            Texture t = assetManager.loadTexture("Textures/wood.jpg");
-    		//t.setWrap(WrapMode.Repeat);
-    		t.setWrap(WrapAxis.T, WrapMode.Repeat);
+            Texture t = assetManager.loadTexture("Textures/wood2.jpg");
+    		t.setWrap(WrapMode.Repeat);
             mat.setTexture("ColorMap", t);
-            
+
             hull.setMaterial(mat);
 
-            // Attaching our geometry to the root node.
+            hull.setLocalTranslation(new Vector3f(0,hullHeight-waterDepth,0));
+            
+            
             shipNode.attachChild(hull);
     	}
+
+    	@Override
+    	public void read(JmeImporter ex) throws IOException {
+    		OutputCapsule capsule = (OutputCapsule) ex.getCapsule(this);
+            capsule.write(hullHeight,  "hullHeight", 7.0f);
+            capsule.write(hullWidth,"hullWidth", 5.0f);
+            capsule.write(hullLength, "hullLength",20.0f);
+            capsule.write(waterDepth, "waterDepth",5.0f);
+    	}
+
+    	@Override
+    	public void write(JmeExporter im) throws IOException {
+            InputCapsule capsule = (InputCapsule) im.getCapsule(this);
+            hullHeight = capsule.readFloat("hullHeight", 7);
+            hullWidth = capsule.readFloat("hullWidth", 5f);
+            hullLength = capsule.readFloat("hullLength", 20f);
+            waterDepth  = capsule.readFloat("waterDepth", 5.0f);
+    	}
     }
+
+    
 }
