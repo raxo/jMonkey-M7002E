@@ -1,4 +1,3 @@
-
 import java.io.IOException;
 
 import javax.vecmath.Matrix3f;
@@ -202,16 +201,37 @@ public class SimpleScene extends SimpleApplication {
     			System.out.println("Creating mast at x="+lengthFromFront);
 	    		Cylinder c = new Cylinder(16, 16, 0.5f, hullHeight*2, true);
 	    		Geometry mast = new Geometry("mast", c);
-	    		
 	    		Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
 	    		mat.setColor("Color", ColorRGBA.Brown);
 	    		mast.setMaterial(mat);
-	    		
 	    		mast.setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/2 , new Vector3f(1,0,0) ));
 	    		mast.setLocalTranslation(new Vector3f(0, hullHeight, 0));
 	    		
+	    		Cylinder c2 = new Cylinder(16, 16, 0.1f, hullWidth, true);
+	    		Geometry bottom = new Geometry("bottom", c2);
+	    		bottom.setMaterial(mat);
+	    		bottom.setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/2 , new Vector3f(0,1,0) ));
+	    		bottom.setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/2 , new Vector3f(0,0,1) ));
+	    		bottom.setLocalTranslation(new Vector3f(0, hullHeight+hullHeight*1/6, 0));
+	    		
+	    		Geometry top = new Geometry("top", c2);
+	    		top.setMaterial(mat);
+	    		top.setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/2 , new Vector3f(0,1,0) ));
+	    		top.setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/2 , new Vector3f(0,0,1) ));
+	    		top.setLocalTranslation(new Vector3f(0, hullHeight+hullHeight-hullHeight*1/6, 0));
+	    		
+	    		Geometry crowsNest = new Geometry("crowsNest", c2);
+	    		crowsNest.setMaterial(mat);
+	    		crowsNest.setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/2 , new Vector3f(0,1,0) ));
+	    		crowsNest.setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/2 , new Vector3f(0,0,1) ));
+	    		crowsNest.setLocalTranslation(new Vector3f(0, hullHeight+hullHeight, 0));
+	    		
+	    		
+	    		
 	    		mastNode = new Node("mast");
 	    		((Node) mastNode).attachChild(mast);
+	    		((Node) mastNode).attachChild(bottom);
+	    		((Node) mastNode).attachChild(top);
 	    		mastNode.setLocalTranslation(lengthFromFront, 0, 0);
     		}
     		this.shipNode.attachChild(mastNode);
