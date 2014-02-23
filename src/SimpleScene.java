@@ -61,45 +61,12 @@ import com.jme3.water.WaterFilter;
  * In order to compile in eclipce: Add assets folder as Class folder. Add jMonkey jars.  
  * @author oskkla-9
  * 
- * 
-1. Write a program that creates a 3D view of some enclosed environment: This could be a 
-bedroom, a classroom, a church hall, an outdoor courtyard, or even an outdoor terrain in a 
-cubic (room) universe. You can model any kind of room, real or imaginary. Start by creating 
-objects and enter their 3D coordinates in the “environment”. You do not have to model it in 
-complete detail, just the walls, door, a few pieces of furniture, or outdoor terrain, trees, 
-bench. You can use simple, block-like shapes to represent the furniture, trees (even as 
-simple as a sphere on top of a vertical cylinder). 
-DONE skybox, water
-
-2. Model Creation: You can create the objects programmatically using basic primitives, or use a 
-modeling program such as Blender (available at www.blender.org for you to download and 
-install) and then load the resulting models into your scene. 
-DONE Ship
-
-3. Instancing: Your room should contain some similar objects (like trees or matching chess 
-pieces), you should model a generic object (like the pawn chess piece) just once, then use it 
-over and over again in your hierarchy, with a different local transformation matrix each time, 
-so each object shows up in a different location (and possible different size, remember 
-“instancing” from the lecture notes). Instancing is an important part of the power of 
-a scenegraph (and this assignment). JMonkey implements instancing automatically for 
-shared mesh objects between the geometries using it (more discussion on instancing from 
-the JME3 forums below) 
-DONE Ship's mast's
-
-4. Smooth motion: In response to user input (keystroke, mouse click) you should move 
-something in the room (for example, one of the chairs could move along floor, a door could 
-open, objects could move on a desk, people move in the room, or a person's head or arm 
-could move). Objects should move smoothly following an animation path. Allow at least 3 
-things to be moved by the user this way.
-island, 
-
- *
  */
 public class SimpleScene extends SimpleApplication {
  
 	private FilterPostProcessor fpp;
 	private WaterFilter water;
-	private Vector3f lightDir = new Vector3f(-4.9f, -1.3f, 5.9f); // same as light source
+	private Vector3f lightDir = new Vector3f(-4.9f, -1.3f, 5.9f);
 	private Node floatingNode, solidNode, controllingNode = null;
 	private boolean enableWaterBobbing = true, enableEarthquake = false, enableSail = false, shipIsSunken = false;
 	MotionEvent Earthquaker, SinkShip;
@@ -112,11 +79,6 @@ public class SimpleScene extends SimpleApplication {
     @Override
     public void simpleInitApp() {
     	
-    	
-    	
-    	
-    	
-
         // You must add a light to make the model visible
         DirectionalLight sun = new DirectionalLight();
         sun.setDirection(new Vector3f(-0.1f, -0.7f, -1.0f));
@@ -174,7 +136,6 @@ public class SimpleScene extends SimpleApplication {
         controllingNode = s.getNode();
         //((Ship) floatingNode.getChild("flagship").getUserData("class")).addFloor();
         
-
         s = new Ship(floatingNode, "longship");
         s.setDimentions(20, 16, 80, 14);
         s.build();
@@ -321,8 +282,8 @@ public class SimpleScene extends SimpleApplication {
 		}
     	
     	public void generate() {
-    		Random random = new Random();
     		/*
+    		Random random = new Random();
     		List<List<Vector4f>> controlPoints = null;
     		List<Float>[] nurbKnots = null;
     		int uSegments;
