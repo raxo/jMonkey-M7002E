@@ -15,7 +15,9 @@ import com.jme3.audio.AudioNode;
 import com.jme3.audio.LowPassFilter;
 import com.jme3.bullet.collision.shapes.PlaneCollisionShape;
 import com.jme3.cinematic.MotionPath;
+import com.jme3.cinematic.MotionPathListener;
 import com.jme3.cinematic.events.MotionEvent;
+import com.jme3.cinematic.events.MotionTrack;
 import com.jme3.export.InputCapsule;
 import com.jme3.export.JmeExporter;
 import com.jme3.export.JmeImporter;
@@ -98,9 +100,9 @@ public class SimpleScene extends SimpleApplication {
 	private FilterPostProcessor fpp;
 	private WaterFilter water;
 	private Vector3f lightDir = new Vector3f(-4.9f, -1.3f, 5.9f); // same as light source
-	private Node floatingNode, solidNode;
-	private boolean enableWaterBobbing = true, enableEarthquake = false;
-	MotionEvent Earthquaker;
+	private Node floatingNode, solidNode, controllingNode = null;
+	private boolean enableWaterBobbing = true, enableEarthquake = false, enableSail = false, shipIsSunken = false;
+	MotionEvent Earthquaker, SinkShip;
 	
     public static void main(String[] args){
     	SimpleScene app = new SimpleScene();
@@ -169,19 +171,33 @@ public class SimpleScene extends SimpleApplication {
         Ship s = new Ship(floatingNode, "flagship");
         s.setDimentions(10, 8, 25, 7);
         s.build();
-        ((Ship) floatingNode.getChild("flagship").getUserData("class")).addFloor();
+        controllingNode = s.getNode();
+        //((Ship) floatingNode.getChild("flagship").getUserData("class")).addFloor();
+        
+
+        s = new Ship(floatingNode, "longship");
+        s.setDimentions(20, 16, 80, 14);
+        s.build();
+        floatingNode.getChild("longship").setLocalTranslation(0, 0, 40);
+        MotionPath shipPath = new MotionPath();
+        shipPath.addWayPoint(new Vector3f(0, 0, 40));
+        shipPath.addWayPoint(new Vector3f(0, -50, 40));
+        shipPath.setCycle(false);
+        SinkShip = new MotionEvent(floatingNode.getChild("longship"),shipPath);
+        SinkShip.setLoopMode(LoopMode.DontLoop);
+        SinkShip.setSpeed(5f);
         
         // input
-        inputManager.addMapping("SetSail",  new KeyTrigger(KeyInput.KEY_1));
-        inputManager.addMapping("Left",   new KeyTrigger(KeyInput.KEY_LEFT));
-        inputManager.addMapping("Right",  new KeyTrigger(KeyInput.KEY_RIGHT));
+        inputManager.addMapping("SetSail",  new KeyTrigger(KeyInput.KEY_R));
+        inputManager.addMapping("Left",   new KeyTrigger(KeyInput.KEY_X));
+        inputManager.addMapping("Right",  new KeyTrigger(KeyInput.KEY_C));
         inputManager.addMapping("SetAnchor", new KeyTrigger(KeyInput.KEY_2));
         inputManager.addMapping("FIRE", new KeyTrigger(KeyInput.KEY_SPACE));
         inputManager.addMapping("Earthquake", new KeyTrigger(KeyInput.KEY_E));
         inputManager.addMapping("WaterBobbing", new KeyTrigger(KeyInput.KEY_B));
         // Add the names to the action listener.
-        inputManager.addListener(actionListener,"Earthquake", "WaterBobbing");
-        inputManager.addListener(analogListener,"Left", "Right", "Rotate", "SetSail", "FIRE");
+        inputManager.addListener(actionListener,"Earthquake", "WaterBobbing", "SetSail", "FIRE");
+        inputManager.addListener(analogListener,"Left", "Right", "Rotate");
     }
     
     private ActionListener actionListener = new ActionListener() {
@@ -194,9 +210,18 @@ public class SimpleScene extends SimpleApplication {
 	            	Earthquaker.stop();
 	        	}
         	}
+        	if (name.equals("FIRE") && keyPressed && !shipIsSunken) {
+    			SinkShip.play();
+    			shipIsSunken = true;
+        	}
         	if (name.equals("WaterBobbing") && keyPressed) {
         		enableWaterBobbing = !enableWaterBobbing;
         	}
+
+    		if (name.equals("SetSail") && keyPressed) {
+    			enableSail = !enableSail;
+    			shipIsAccelerating = true;
+    		}
 		}
     };
     private AnalogListener analogListener = new AnalogListener() {
@@ -204,17 +229,14 @@ public class SimpleScene extends SimpleApplication {
     		if (name.equals("FIRE")) {
 
     		}
-    		if (name.equals("SetSail")) {
-    			// http://hub.jmonkeyengine.org/wiki/doku.php/jme3:advanced:motionpath
-    		}
     		if (name.equals("SetAnchor")) {
 
     		}
-    		if (name.equals("Right")) {
-
+    		if (name.equals("Right") && controllingNode != null && enableSail) {
+    			controllingNode.rotate(0, value/2, 0);
     		}
-        	if (name.equals("Left")) {
-
+        	if (name.equals("Left") && controllingNode != null && enableSail) {
+    			controllingNode.rotate(0, -value/2, 0);
         	}
         }
     };
@@ -225,19 +247,49 @@ public class SimpleScene extends SimpleApplication {
     private boolean uw = false;
     //AudioNode waves;
     
+    private float shipTopSpeed = 0.05f;
+    private float shipCurrentpSpeed = 0f;
+    private float shipAcceleration = 0.0001f;
+    private boolean shipIsAccelerating = false;
+    
     @Override
     public void simpleUpdate(float tpf) {
         super.simpleUpdate(tpf);
+        Vector3f v;
+        Quaternion q;
         if(enableWaterBobbing) {
             time += tpf;
 	        waterHeight = (float) Math.cos(((time * 0.6f) % FastMath.TWO_PI)) * 1.5f;
 	        water.setWaterHeight(initialWaterHeight + waterHeight);
 	        
 	        // move floating node up/down
-	        Vector3f v = floatingNode.getLocalTranslation();
+	        v = floatingNode.getLocalTranslation();
 	        v.y = waterHeight;
 	        floatingNode.setLocalTranslation(v);
-	        
+        }
+        
+        if(enableSail || shipIsAccelerating) {
+        	v = controllingNode.getLocalRotation().getRotationColumn(0);
+        	
+        	// calc new speed
+        	if(shipIsAccelerating) {
+	        	if(enableSail && shipCurrentpSpeed >= shipTopSpeed) { // full speed
+	        		shipCurrentpSpeed = shipTopSpeed;
+	        		shipIsAccelerating = false;
+	        	} else if(enableSail && shipCurrentpSpeed < shipTopSpeed) { // accelerating
+        			shipCurrentpSpeed += shipAcceleration; // accelerating up
+        		} else if(shipCurrentpSpeed < 0) { // halt
+	        		shipIsAccelerating = false;
+	        		shipCurrentpSpeed = 0;
+        		} else if(!enableSail && shipCurrentpSpeed <= shipTopSpeed) {
+        			shipCurrentpSpeed -= shipAcceleration; // accelerating down
+        		}
+        	}
+        	
+        	v.multLocal(-shipCurrentpSpeed);
+        	System.out.println(v);
+        	controllingNode.move(v);
+        	
         }
     }
     
@@ -321,7 +373,6 @@ public class SimpleScene extends SimpleApplication {
     	private float hullWidth = 5.0f;
     	private float hullLength = 20.0f;
     	private float waterDepth = 5.0f;
-    	
 
     	//private AssetManager assetManager;
     	
@@ -339,10 +390,19 @@ public class SimpleScene extends SimpleApplication {
     	public void build() {
     		//addFloor();
     		addHull();
-    		addMast(hullLength/4f);
-    		addMast(hullLength/1.5f);
+    		
+    		float mastSpace = 2*(hullHeight-waterDepth);
+    		float mast = mastSpace;
+    		while(0 < mast && mast < hullLength-hullLength/6) {
+    			addMast(mast);
+    			mast += mastSpace;
+    		}
+    		
+    		//addMast(hullLength/4f);
+    		//addMast(hullLength/1.5f);
     		addAftercastle();
     		addBowsprit();
+    		addFloor();
 
     		parentNode.attachChild(node);
     	}
@@ -466,12 +526,10 @@ public class SimpleScene extends SimpleApplication {
 			double sinCosMathShitt = Math.tan((hullHeight/6)/(hullLength/6));
 			bowsprit.getLocalRotation().multLocal(new Quaternion().fromAngleAxis( (float) (FastMath.PI/2) , new Vector3f(0,1,0) ));
 			bowsprit.getLocalRotation().multLocal(new Quaternion().fromAngleAxis( (float) (sinCosMathShitt) , new Vector3f(1,0,0) ));
-			//bowsprit.setLocalRotation(q);
-			bowsprit.setLocalTranslation(new Vector3f(-hullHeight*1/3, hullHeight-waterDepth+2*hullHeight/6, 0));
+			//bowsprit.setLocalTranslation(new Vector3f(-hullLength*1/6, hullHeight-waterDepth+hullHeight/6, 0));
+			bowsprit.setLocalTranslation(new Vector3f(-(float)(Math.cos(sinCosMathShitt)*(hullHeight/2-1f)), hullHeight-waterDepth+hullHeight/6+(float)(Math.sin(sinCosMathShitt)*(hullHeight/2-1f)), 0));
 			node.attachChild(bowsprit);
     	}
-    	
-    	private static final float derp = 1;
     	
     	private void addHull() {
     		// http://jmonkeyengine.googlecode.com/svn/branches/stable-alpha4/engine/src/test/jme3test/model/shape/TestCustomMesh.java
