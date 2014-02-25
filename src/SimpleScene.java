@@ -18,6 +18,9 @@ import com.jme3.cinematic.MotionPath;
 import com.jme3.cinematic.MotionPathListener;
 import com.jme3.cinematic.events.MotionEvent;
 import com.jme3.cinematic.events.MotionTrack;
+import com.jme3.collision.Collidable;
+import com.jme3.collision.CollisionResult;
+import com.jme3.collision.CollisionResults;
 import com.jme3.export.InputCapsule;
 import com.jme3.export.JmeExporter;
 import com.jme3.export.JmeImporter;
@@ -35,16 +38,19 @@ import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Plane;
 import com.jme3.math.Quaternion;
+import com.jme3.math.Ray;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.math.Vector4f;
 import com.jme3.post.FilterPostProcessor;
 import com.jme3.post.filters.FogFilter;
+import com.jme3.scene.CameraNode;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Mesh;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
 import com.jme3.scene.VertexBuffer.Type;
+import com.jme3.scene.control.CameraControl.ControlDirection;
 import com.jme3.scene.shape.Box;
 import com.jme3.scene.shape.Cylinder;
 import com.jme3.scene.shape.Sphere;
@@ -67,9 +73,10 @@ public class SimpleScene extends SimpleApplication {
 	private FilterPostProcessor fpp;
 	private WaterFilter water;
 	private Vector3f lightDir = new Vector3f(-4.9f, -1.3f, 5.9f);
-	private Node floatingNode, solidNode, controllingNode = null;
+	private Node floatingNode, solidNode, controllingNode = null, pickable;
 	private boolean enableWaterBobbing = true, enableEarthquake = false, enableSail = false, shipIsSunken = false;
 	MotionEvent Earthquaker, SinkShip;
+	Geometry mark;
 	
     public static void main(String[] args){
     	SimpleScene app = new SimpleScene();
@@ -110,12 +117,15 @@ public class SimpleScene extends SimpleApplication {
     	// sky!
         rootNode.attachChild(SkyFactory.createSky( assetManager, "Scenes/Beach/FullskiesSunset0068.dds", false));
     	
+        pickable = new Node("pickable");
+        rootNode.attachChild(pickable);
+        
         // solid
         solidNode = new Node("pivot");
-        rootNode.attachChild(solidNode); // put this node in the scene
+        pickable.attachChild(solidNode);
         Island i = new Island(solidNode, "mainLand");
         i.generate();
-        solidNode.getChild("mainLand").setLocalTranslation(new Vector3f(150f, 0, 150f));
+        solidNode.getChild("mainLand").setLocalTranslation(new Vector3f(150f, -1f, 150f));
         
         MotionPath path = new MotionPath();
         path.addWayPoint(new Vector3f(1, 0, 0));
@@ -129,7 +139,7 @@ public class SimpleScene extends SimpleApplication {
         
         // float
         floatingNode = new Node("floating");
-        rootNode.attachChild(floatingNode);
+        pickable.attachChild(floatingNode);
         Ship s = new Ship(floatingNode, "flagship");
         s.setDimentions(10, 8, 25, 7);
         s.build();
@@ -148,16 +158,23 @@ public class SimpleScene extends SimpleApplication {
         SinkShip.setLoopMode(LoopMode.DontLoop);
         SinkShip.setSpeed(5f);
         
+        // picking
+        mark = new Geometry("mark", new Sphere(30, 30, 0.2f));
+        Material mark_mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        mark_mat.setColor("Color", ColorRGBA.Red);
+        mark.setMaterial(mark_mat);
+        
         // input
         inputManager.addMapping("SetSail",  new KeyTrigger(KeyInput.KEY_R));
-        inputManager.addMapping("Left",   new KeyTrigger(KeyInput.KEY_X));
-        inputManager.addMapping("Right",  new KeyTrigger(KeyInput.KEY_C));
+        inputManager.addMapping("Left",   new KeyTrigger(KeyInput.KEY_A));
+        inputManager.addMapping("Right",  new KeyTrigger(KeyInput.KEY_D));
         inputManager.addMapping("SetAnchor", new KeyTrigger(KeyInput.KEY_2));
         inputManager.addMapping("FIRE", new KeyTrigger(KeyInput.KEY_SPACE));
         inputManager.addMapping("Earthquake", new KeyTrigger(KeyInput.KEY_E));
         inputManager.addMapping("WaterBobbing", new KeyTrigger(KeyInput.KEY_B));
+        inputManager.addMapping("Picking", new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
         // Add the names to the action listener.
-        inputManager.addListener(actionListener,"Earthquake", "WaterBobbing", "SetSail", "FIRE");
+        inputManager.addListener(actionListener,"Picking", "Earthquake", "WaterBobbing", "SetSail", "FIRE");
         inputManager.addListener(analogListener,"Left", "Right", "Rotate");
     }
     
@@ -178,10 +195,67 @@ public class SimpleScene extends SimpleApplication {
         	if (name.equals("WaterBobbing") && keyPressed) {
         		enableWaterBobbing = !enableWaterBobbing;
         	}
+        	// http://hub.jmonkeyengine.org/wiki/doku.php/jme3:beginner:hello_picking
+        	if (name.equals("Picking") && keyPressed) {
+        		
+        		// 1. Reset results list.
+                CollisionResults results = new CollisionResults();
+                // 2. Aim the ray from cam loc to cam direction.
+                Ray ray;
+                if(enableSail) {
+                	// http://hub.jmonkeyengine.org/wiki/doku.php/jme3:advanced:mouse_picking
+                	Vector2f click2d = inputManager.getCursorPosition();
+                    Vector3f click3d = cam.getWorldCoordinates(new Vector2f(click2d.x, click2d.y), 0f).clone();
+                    Vector3f dir = cam.getWorldCoordinates(new Vector2f(click2d.x, click2d.y), 1f).subtractLocal(click3d).normalizeLocal();
+                	ray = new Ray(click3d, dir);
+                } else {
+                	ray = new Ray(cam.getLocation(), cam.getDirection());
+                }
+				// 3. Collect intersections between Ray and Shootables in results list.
+                pickable.collideWith(ray, results);
+                // 4. Print results.
+				// 5. Use the results (we mark the hit object)
+                if (results.size() > 0){
+                  // The closest collision point is what was truly hit:
+                  CollisionResult closest = results.getClosestCollision();
+                  mark.setLocalTranslation(closest.getContactPoint());
+                  // Let's interact - we mark the hit with a red dot.
+                  pickable.attachChild(mark);
+                } else {
+                // No hits? Then remove the red mark.
+                	pickable.detachChild(mark);
+                }
+        	}
 
     		if (name.equals("SetSail") && keyPressed) {
     			enableSail = !enableSail;
     			shipIsAccelerating = true;
+    			
+    			// toggle camera
+    			// http://hub.jmonkeyengine.org/wiki/doku.php/jme3:advanced:making_the_camera_follow_a_character
+    			if(enableSail) {
+    				flyCam.setEnabled(false);
+    				CameraNode camNode = new CameraNode("Camera Node", cam);
+    				camNode.setControlDir(ControlDirection.SpatialToCamera);
+    				controllingNode.attachChild(camNode);
+    				Vector3f v = controllingNode.getLocalRotation().getRotationColumn(0);
+    				Ship s = null;
+    				if(controllingNode.getUserData("class") instanceof Ship) {
+    					s = controllingNode.getUserData("class");
+    				} else {
+    					return;
+    				}
+    				v.x = s.hullLength*3;
+    				v.y = s.hullHeight*3;
+    				camNode.setLocalTranslation(v);
+    				camNode.lookAt(controllingNode.getLocalTranslation(), Vector3f.UNIT_Y);
+    			} else {
+    				CameraNode camNode = (CameraNode) controllingNode.getChild("Camera Node");
+    				camNode.setControlDir(ControlDirection.CameraToSpatial);
+    				controllingNode.detachChild(camNode);
+    				flyCam.setEnabled(true);
+    				flyCam.setDragToRotate(false);
+    			}
     		}
 		}
     };
@@ -248,7 +322,6 @@ public class SimpleScene extends SimpleApplication {
         	}
         	
         	v.multLocal(-shipCurrentpSpeed);
-        	System.out.println(v);
         	controllingNode.move(v);
         	
         }
@@ -282,6 +355,7 @@ public class SimpleScene extends SimpleApplication {
 		}
     	
     	public void generate() {
+    		
     		/*
     		Random random = new Random();
     		List<List<Vector4f>> controlPoints = null;
@@ -300,7 +374,7 @@ public class SimpleScene extends SimpleApplication {
     	    mat.setFloat("Tex2Scale", 32f);
     		
     		Sphere s = new Sphere(20, 20, width/2);
-    		Geometry island = new Geometry("flagPole", s);
+    		Geometry island = new Geometry("landmass", s);
     		island.setMaterial(mat);
     		
     		Spatial palm = assetManager.loadModel("Models/palm.obj"); // http://www.the3dmodelstore.com/free.php
@@ -482,7 +556,7 @@ public class SimpleScene extends SimpleApplication {
     		mat.setColor("Color", ColorRGBA.Brown);
     		
     		Cylinder c = new Cylinder(16, 16, 0.2f, hullHeight, true);
-			Geometry bowsprit = new Geometry("flagPole", c);
+			Geometry bowsprit = new Geometry("bowsprit", c);
 			bowsprit.setMaterial(mat);
 			double sinCosMathShitt = Math.tan((hullHeight/6)/(hullLength/6));
 			bowsprit.getLocalRotation().multLocal(new Quaternion().fromAngleAxis( (float) (FastMath.PI/2) , new Vector3f(0,1,0) ));
@@ -579,7 +653,7 @@ public class SimpleScene extends SimpleApplication {
             m.updateBound();
             
             
-            Geometry hull = new Geometry("OurMesh", m);
+            Geometry hull = new Geometry("hull", m);
             Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
             //mat.setColor("Color", ColorRGBA.Brown);
             
