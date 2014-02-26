@@ -26,14 +26,18 @@ import com.jme3.export.JmeExporter;
 import com.jme3.export.JmeImporter;
 import com.jme3.export.OutputCapsule;
 import com.jme3.export.Savable;
+import com.jme3.font.BitmapText;
 import com.jme3.input.KeyInput;
 import com.jme3.input.MouseInput;
 import com.jme3.input.controls.ActionListener;
 import com.jme3.input.controls.AnalogListener;
 import com.jme3.input.controls.KeyTrigger;
 import com.jme3.input.controls.MouseButtonTrigger;
+import com.jme3.input.controls.Trigger;
 import com.jme3.light.DirectionalLight;
+import com.jme3.light.Light;
 import com.jme3.material.Material;
+import com.jme3.material.MaterialDef;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Plane;
@@ -163,6 +167,7 @@ public class SimpleScene extends SimpleApplication {
         Material mark_mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
         mark_mat.setColor("Color", ColorRGBA.Red);
         mark.setMaterial(mark_mat);
+		toogleAim();
         
         // input
         inputManager.addMapping("SetSail",  new KeyTrigger(KeyInput.KEY_R));
@@ -176,6 +181,7 @@ public class SimpleScene extends SimpleApplication {
         // Add the names to the action listener.
         inputManager.addListener(actionListener,"Picking", "Earthquake", "WaterBobbing", "SetSail", "FIRE");
         inputManager.addListener(analogListener,"Left", "Right", "Rotate");
+        
     }
     
     private ActionListener actionListener = new ActionListener() {
@@ -198,7 +204,7 @@ public class SimpleScene extends SimpleApplication {
         	// http://hub.jmonkeyengine.org/wiki/doku.php/jme3:beginner:hello_picking
         	if (name.equals("Picking") && keyPressed) {
         		
-        		// 1. Reset results list.
+    			// 1. Reset results list.
                 CollisionResults results = new CollisionResults();
                 // 2. Aim the ray from cam loc to cam direction.
                 Ray ray;
@@ -216,21 +222,24 @@ public class SimpleScene extends SimpleApplication {
                 // 4. Print results.
 				// 5. Use the results (we mark the hit object)
                 if (results.size() > 0){
-                  // The closest collision point is what was truly hit:
-                  CollisionResult closest = results.getClosestCollision();
-                  mark.setLocalTranslation(closest.getContactPoint());
-                  // Let's interact - we mark the hit with a red dot.
-                  pickable.attachChild(mark);
+                	// The closest collision point is what was truly hit:
+                	CollisionResult closest = results.getClosestCollision();
+                	
+                	// trigger MyNode specific action
+	  				if(closest.getGeometry().getParent().getUserData("class") instanceof MyNode) {
+	  					((MyNode) closest.getGeometry().getParent().getUserData("class")).onClick();
+	  				}
                 } else {
-                // No hits? Then remove the red mark.
-                	pickable.detachChild(mark);
+	                
                 }
         	}
 
     		if (name.equals("SetSail") && keyPressed) {
     			enableSail = !enableSail;
     			shipIsAccelerating = true;
-    			
+				toogleAim();
+				toogleGUI();
+				
     			// toggle camera
     			// http://hub.jmonkeyengine.org/wiki/doku.php/jme3:advanced:making_the_camera_follow_a_character
     			if(enableSail) {
@@ -250,6 +259,9 @@ public class SimpleScene extends SimpleApplication {
     				camNode.setLocalTranslation(v);
     				camNode.lookAt(controllingNode.getLocalTranslation(), Vector3f.UNIT_Y);
     			} else {
+    				if(controllingNode.getChild("Camera Node") == null) {
+    					return;
+    				}
     				CameraNode camNode = (CameraNode) controllingNode.getChild("Camera Node");
     				camNode.setControlDir(ControlDirection.CameraToSpatial);
     				controllingNode.detachChild(camNode);
@@ -267,10 +279,10 @@ public class SimpleScene extends SimpleApplication {
     		if (name.equals("SetAnchor")) {
 
     		}
-    		if (name.equals("Right") && controllingNode != null && enableSail) {
+    		if (name.equals("Left") && controllingNode != null && enableSail) {
     			controllingNode.rotate(0, value/2, 0);
     		}
-        	if (name.equals("Left") && controllingNode != null && enableSail) {
+        	if (name.equals("Right") && controllingNode != null && enableSail) {
     			controllingNode.rotate(0, -value/2, 0);
         	}
         }
@@ -292,16 +304,15 @@ public class SimpleScene extends SimpleApplication {
         super.simpleUpdate(tpf);
         Vector3f v;
         Quaternion q;
-        if(enableWaterBobbing) {
-            time += tpf;
-	        waterHeight = (float) Math.cos(((time * 0.6f) % FastMath.TWO_PI)) * 1.5f;
-	        water.setWaterHeight(initialWaterHeight + waterHeight);
-	        
-	        // move floating node up/down
-	        v = floatingNode.getLocalTranslation();
-	        v.y = waterHeight;
-	        floatingNode.setLocalTranslation(v);
-        }
+        
+        time += tpf;
+        waterHeight = (float) Math.cos(((time * 0.6f) % FastMath.TWO_PI)) * 1.5f;
+        water.setWaterHeight(initialWaterHeight + waterHeight);
+        
+        // move floating node up/down
+        v = floatingNode.getLocalTranslation();
+        v.y = waterHeight;
+        floatingNode.setLocalTranslation(v);
         
         if(enableSail || shipIsAccelerating) {
         	v = controllingNode.getLocalRotation().getRotationColumn(0);
@@ -325,10 +336,33 @@ public class SimpleScene extends SimpleApplication {
         	controllingNode.move(v);
         	
         }
+        
+    }
+    
+    protected void toogleAim() {
+    	if(guiNode.getChild("aim") == null) {
+	        setDisplayStatView(false);
+	        guiFont = assetManager.loadFont("Interface/Fonts/Default.fnt");
+	        BitmapText ch = new BitmapText(guiFont, false);
+	        ch.setName("aim");
+	        ch.setSize(guiFont.getCharSet().getRenderedSize() * 2);
+	        ch.setText("+");
+	        ch.setLocalTranslation(settings.getWidth() / 2 - ch.getLineWidth()/2, settings.getHeight() / 2 + ch.getLineHeight()/2, 0);
+	        guiNode.attachChild(ch);
+    	} else {
+    		guiNode.detachChildNamed("aim");
+    	}
+    }
+    
+    protected void toogleGUI() {
+    	
     }
     
     abstract class MyNode implements Savable {
     	protected Node node, parentNode;
+    	
+    	abstract public void onClick();
+    	abstract public void onColide(String withWhatId);
     	
     	public MyNode(Node parentNode, String id) {
     		node = new Node(id);
@@ -399,6 +433,18 @@ public class SimpleScene extends SimpleApplication {
             InputCapsule capsule = (InputCapsule) im.getCapsule(this);
             width = capsule.readFloat("hullHeight", defaultWith);
     	}
+
+		@Override
+		public void onClick() {
+			System.out.println("Clicked on island");
+			actionListener.onAction("Earthquake", true, 0);
+		}
+
+		@Override
+		public void onColide(String withWhatId) {
+			// TODO Auto-generated method stub
+			
+		}
     	
     }
     
@@ -512,6 +558,7 @@ public class SimpleScene extends SimpleApplication {
 	    		((Node) mastNode).attachChild(sail);
 	    		((Node) mastNode).attachChild(flag);
 	    		mastNode.setLocalTranslation(lengthFromFront, 0, 0);
+	    		mastNode.setUserData("class", this);
     		}
     		this.node.attachChild(mastNode);
     	}
@@ -687,6 +734,59 @@ public class SimpleScene extends SimpleApplication {
             hullLength = capsule.readFloat("hullLength", 20f);
             waterDepth  = capsule.readFloat("waterDepth", 5.0f);
     	}
+
+		@Override
+		public void onClick() {
+			System.out.println("Clicked on Ship!");
+			if(!enableSail) {
+				controllingNode = getNode();
+				
+				// add gui foreach canon!
+				
+			} else {
+				
+			}
+			actionListener.onAction("SetSail", true, 0);
+		}
+
+		@Override
+		public void onColide(String withWhatId) {
+			// TODO Auto-generated method stub
+			
+		}
+    }
+    
+    class Cannon extends MyNode {
+
+		public Cannon(Node parentNode, String id) {
+			super(parentNode, id);
+			
+		}
+
+		@Override
+		public void read(JmeImporter arg0) throws IOException {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void write(JmeExporter arg0) throws IOException {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void onClick() {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void onColide(String withWhatId) {
+			// TODO Auto-generated method stub
+			
+		}
+    	
     }
 
     
