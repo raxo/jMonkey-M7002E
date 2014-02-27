@@ -226,8 +226,8 @@ public class SimpleScene extends SimpleApplication {
                 	CollisionResult closest = results.getClosestCollision();
                 	
                 	// trigger MyNode specific action
-	  				if(closest.getGeometry().getParent().getUserData("class") instanceof MyNode) {
-	  					((MyNode) closest.getGeometry().getParent().getUserData("class")).onClick();
+	  				if(closest.getGeometry().getParent().getUserData("class") instanceof MyClickable) {
+	  					((MyClickable) closest.getGeometry().getParent().getUserData("class")).onClick();
 	  				}
                 } else {
 	                
@@ -357,8 +357,12 @@ public class SimpleScene extends SimpleApplication {
     protected void toogleGUI() {
     	
     }
+
+    interface MyClickable {
+    	public void onClick();
+    }
     
-    abstract class MyNode implements Savable {
+    abstract class MyNode implements Savable, MyClickable {
     	protected Node node, parentNode;
     	
     	abstract public void onClick();
@@ -448,12 +452,15 @@ public class SimpleScene extends SimpleApplication {
     	
     }
     
+    
     class Ship extends MyNode {
     	
     	private float hullHeight = 7.0f;
     	private float hullWidth = 5.0f;
     	private float hullLength = 20.0f;
     	private float waterDepth = 5.0f;
+    	private int cannonNum = 2;
+    	private Node cannonGuiNode = null;
 
     	//private AssetManager assetManager;
     	
@@ -474,18 +481,51 @@ public class SimpleScene extends SimpleApplication {
     		
     		float mastSpace = 2*(hullHeight-waterDepth);
     		float mast = mastSpace;
+    		
     		while(0 < mast && mast < hullLength-hullLength/6) {
     			addMast(mast);
-    			mast += mastSpace;
+    			addCannon(mast);
+        		mast += mastSpace;
     		}
+
     		
     		//addMast(hullLength/4f);
     		//addMast(hullLength/1.5f);
     		addAftercastle();
     		addBowsprit();
     		addFloor();
-
     		parentNode.attachChild(node);
+    	}
+    	
+    	private void addCannon(float lengthFromFront) {
+    		Spatial cannonPairNode = getNode().getChild("cannon"); // pair of cannons
+    		if(cannonPairNode != null && cannonPairNode instanceof Node) {
+    			System.out.println("Cloning mast Cannon!");
+    			cannonPairNode = (Node) cannonPairNode.clone(true);
+    			cannonPairNode.setLocalTranslation(lengthFromFront, (hullHeight-waterDepth)/2, 0);
+        		cannonGuiNode.attachChild(((Node)cannonPairNode));
+    		} else {
+    			cannonGuiNode = new Node("cannon cluster");
+    			cannonPairNode = new Node("cannon");
+    			Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+	    		mat.setColor("Color", ColorRGBA.Black);
+	    		
+	    		Cylinder c = new Cylinder(16, 16, (waterDepth-hullHeight)/8, hullWidth/4, true);
+	    		Geometry cannon = new Geometry("mast", c);
+	    		cannon.setMaterial(mat);
+	    		cannon.setLocalRotation(new Quaternion(0, 1, 0, FastMath.PI/2));
+	    		cannon.setLocalTranslation(new Vector3f(0, 0, hullWidth/2));
+	    		((Node)cannonPairNode).attachChild(cannon);
+	    		cannon = cannon.clone();
+	    		cannon.setLocalRotation(new Quaternion(0, 1, 0, FastMath.PI/2));
+	    		cannon.setLocalTranslation(new Vector3f(0, 0, -hullWidth/2));
+	    		((Node)cannonPairNode).attachChild(cannon);
+	    		
+	    		cannonPairNode.setLocalTranslation(lengthFromFront, (hullHeight-waterDepth)/2, 0);
+        		
+        		cannonGuiNode.attachChild(((Node)cannonPairNode));
+	    		getNode().attachChild(cannonGuiNode);
+    		}
     	}
     	
     	private void addMast(float lengthFromFront) {
@@ -724,6 +764,7 @@ public class SimpleScene extends SimpleApplication {
             capsule.write(hullWidth,"hullWidth", 5.0f);
             capsule.write(hullLength, "hullLength",20.0f);
             capsule.write(waterDepth, "waterDepth",5.0f);
+            capsule.write(cannonNum, "cannonNum", 1);
     	}
 
     	@Override
@@ -733,6 +774,8 @@ public class SimpleScene extends SimpleApplication {
             hullWidth = capsule.readFloat("hullWidth", 5f);
             hullLength = capsule.readFloat("hullLength", 20f);
             waterDepth  = capsule.readFloat("waterDepth", 5.0f);
+            cannonNum  = capsule.readInt("cannonNum", 1);
+            
     	}
 
 		@Override
@@ -742,11 +785,19 @@ public class SimpleScene extends SimpleApplication {
 				controllingNode = getNode();
 				
 				// add gui foreach canon!
-				
+				if(cannonGuiNode == null) {
+					addCannonGui();
+				}
+				getNode().attachChild(cannonGuiNode);
 			} else {
-				
+				cannonGuiNode.removeFromParent();
 			}
 			actionListener.onAction("SetSail", true, 0);
+		}
+		
+		private void addCannonGui() {
+			
+			
 		}
 
 		@Override
@@ -756,10 +807,14 @@ public class SimpleScene extends SimpleApplication {
 		}
     }
     
-    class Cannon extends MyNode {
+    class CannonButton extends MyNode {
 
-		public Cannon(Node parentNode, String id) {
+		public CannonButton(Node parentNode, String id) {
 			super(parentNode, id);
+			
+		}
+		
+		public void build() {
 			
 		}
 
@@ -786,8 +841,5 @@ public class SimpleScene extends SimpleApplication {
 			// TODO Auto-generated method stub
 			
 		}
-    	
     }
-
-    
 }
