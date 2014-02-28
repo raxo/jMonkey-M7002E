@@ -1,7 +1,9 @@
 import java.io.IOException;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.Vector;
 
 import javax.vecmath.Matrix3f;
 
@@ -365,8 +367,18 @@ public class SimpleScene extends SimpleApplication {
     abstract class MyNode implements Savable, MyClickable {
     	protected Node node, parentNode;
     	
+    	protected ActionListener onActivate;
+    	
     	abstract public void onClick();
-    	abstract public void onColide(String withWhatId);
+		public void onColide(String withWhatId) {
+			Object o = getNode().getParent().getUserData("class");
+			if(o != null && o instanceof MyNode) {
+				((MyNode) o).onColide(withWhatId); // kick up to the parent
+			}
+		}
+    	public void onActivate() {
+    		
+    	}
     	
     	public MyNode(Node parentNode, String id) {
     		node = new Node(id);
@@ -460,7 +472,6 @@ public class SimpleScene extends SimpleApplication {
     	private float hullLength = 20.0f;
     	private float waterDepth = 5.0f;
     	private int cannonNum = 2;
-    	private Node cannonGuiNode = null;
 
     	//private AssetManager assetManager;
     	
@@ -476,7 +487,6 @@ public class SimpleScene extends SimpleApplication {
     	}
     	
     	public void build() {
-    		//addFloor();
     		addHull();
     		
     		float mastSpace = 2*(hullHeight-waterDepth);
@@ -484,7 +494,7 @@ public class SimpleScene extends SimpleApplication {
     		
     		while(0 < mast && mast < hullLength-hullLength/6) {
     			addMast(mast);
-    			addCannon(mast);
+    			addCannon(mast, 1);
         		mast += mastSpace;
     		}
 
@@ -497,35 +507,20 @@ public class SimpleScene extends SimpleApplication {
     		parentNode.attachChild(node);
     	}
     	
-    	private void addCannon(float lengthFromFront) {
-    		Spatial cannonPairNode = getNode().getChild("cannon"); // pair of cannons
-    		if(cannonPairNode != null && cannonPairNode instanceof Node) {
-    			System.out.println("Cloning mast Cannon!");
-    			cannonPairNode = (Node) cannonPairNode.clone(true);
-    			cannonPairNode.setLocalTranslation(lengthFromFront, (hullHeight-waterDepth)/2, 0);
-        		cannonGuiNode.attachChild(((Node)cannonPairNode));
-    		} else {
-    			cannonGuiNode = new Node("cannon cluster");
-    			cannonPairNode = new Node("cannon");
-    			Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-	    		mat.setColor("Color", ColorRGBA.Black);
-	    		
-	    		Cylinder c = new Cylinder(16, 16, (waterDepth-hullHeight)/8, hullWidth/4, true);
-	    		Geometry cannon = new Geometry("mast", c);
-	    		cannon.setMaterial(mat);
-	    		cannon.setLocalRotation(new Quaternion(0, 1, 0, FastMath.PI/2));
-	    		cannon.setLocalTranslation(new Vector3f(0, 0, hullWidth/2));
-	    		((Node)cannonPairNode).attachChild(cannon);
-	    		cannon = cannon.clone();
-	    		cannon.setLocalRotation(new Quaternion(0, 1, 0, FastMath.PI/2));
-	    		cannon.setLocalTranslation(new Vector3f(0, 0, -hullWidth/2));
-	    		((Node)cannonPairNode).attachChild(cannon);
-	    		
-	    		cannonPairNode.setLocalTranslation(lengthFromFront, (hullHeight-waterDepth)/2, 0);
-        		
-        		cannonGuiNode.attachChild(((Node)cannonPairNode));
-	    		getNode().attachChild(cannonGuiNode);
-    		}
+    	private void addCannon(float lengthFromFront, int type) {
+    		Cannon c = new Cannon(getNode(), "cannon");
+    		c.setType(type);
+    		c.setLength(hullWidth/4);
+    		c.setRadie((hullHeight-waterDepth)/8);
+    		c.build();
+    		Node cannonNode = c.getNode();
+    		cannonNode.setLocalTranslation(lengthFromFront, (hullHeight-waterDepth)/2, hullWidth/2);
+    		getNode().attachChild(cannonNode);
+    		
+    		cannonNode = (Node) cannonNode.clone();
+    		cannonNode.setLocalTranslation(lengthFromFront, (hullHeight-waterDepth)/2, -hullWidth/2);
+    		getNode().attachChild(cannonNode);
+    		
     	}
     	
     	private void addMast(float lengthFromFront) {
@@ -778,26 +773,73 @@ public class SimpleScene extends SimpleApplication {
             
     	}
 
+    	private ActionListener shipsActionListener;
+    	
+    	final public Vector<Node> getCannons(Node shipNode) {
+			int i =0;
+			Vector<Node> cannons = new Vector<Node>();
+			if(shipNode == null 
+					|| shipNode.getUserData("class") == null
+					|| !(shipNode.getUserData("class") instanceof Ship)) {
+				return cannons;
+			}
+			Ship s = (Ship) shipNode.getUserData("class");
+			List<Spatial> list = s.getNode().getChildren();
+			while(list.size() > i) {
+				if(list.get(i).getName() == "cannon") {
+					cannons.add((Node) list.get(i));
+				}
+				i++;
+			}
+			return cannons;
+    	}
+    	
 		@Override
 		public void onClick() {
 			System.out.println("Clicked on Ship!");
+			
+			Vector<Node> cannons = getCannons(getNode());
+			String[] args = new String[]{};
+			
 			if(!enableSail) {
 				controllingNode = getNode();
-				
-				// add gui foreach canon!
-				if(cannonGuiNode == null) {
-					addCannonGui();
+				// add cannon listeners
+				for(Node n : cannons) {
+					if(cannons.indexOf(n)+1 <= 11) {
+						// http://www.jmonkeyengine.org/doc/constant-values.html#com.jme.input.KeyInput.KEY_0
+						// 2 => KEY_1, 3 => KEY_2 .... 11 => KEY_0 
+						inputManager.addMapping("fireCannon"+cannons.indexOf(n), new KeyTrigger(cannons.indexOf(n)+2));
+						args[cannons.indexOf(n)] = "fireCannon"+cannons.indexOf(n);
+					}
 				}
-				getNode().attachChild(cannonGuiNode);
+				shipsActionListener = new ActionListener() {
+					
+					@Override
+					public void onAction(String name, boolean pressed, float t) {
+						if(name.substring(0, ("fireCannon").length()) == "fireCannon") {
+							int i = Integer.parseInt(name.substring(("fireCannon").length()));
+							Vector<Node> cannons = getCannons(controllingNode);
+							if(cannons.size() > i) {
+								return;
+							}
+							Object o = cannons.get(i).getUserData("class");
+							if(o != null && o instanceof Cannon) {
+								((Cannon) o).onActivate();
+							}
+						}
+					}
+				};
+				inputManager.addListener(shipsActionListener, args);
 			} else {
-				cannonGuiNode.removeFromParent();
+				// remove cannon listeners
+				for(Node n : cannons) {
+					if(cannons.indexOf(n)+1 <= 11) {
+						inputManager.deleteMapping("fireCannon"+cannons.indexOf(n));
+					}
+				}
+				inputManager.removeListener(shipsActionListener);
 			}
 			actionListener.onAction("SetSail", true, 0);
-		}
-		
-		private void addCannonGui() {
-			
-			
 		}
 
 		@Override
@@ -807,39 +849,94 @@ public class SimpleScene extends SimpleApplication {
 		}
     }
     
-    class CannonButton extends MyNode {
+    class Cannon extends MyNode {
+    	
+    	final public int[] cannonTypes = {
+			0, // nothing
+			1, // destruct
+			2, // scale
+			3, // teleport
+			4, // repaint
+			5, // trigger collide
+			6, // trigger click
+			7 // flame
+    	};
+    	
+    	private int type = 0;
+    	private float length;
+    	private float radie;
 
-		public CannonButton(Node parentNode, String id) {
+		public Cannon(Node parentNode, String id) {
 			super(parentNode, id);
 			
 		}
-		
+
+		public void setType(int type) {
+			this.type = type;
+		}
+		public void setLength(float length) {
+			this.length = length;
+		}
+		public void setRadie(float radie) {
+			this.radie = radie;
+		}
+
 		public void build() {
+			Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+			if(type == 0) {
+    			mat.setColor("Color", ColorRGBA.Gray);
+    		} else if(type == 1) {
+    			mat.setColor("Color", ColorRGBA.Black);
+    		} else if(type == 2) {
+    			mat.setColor("Color", ColorRGBA.Red);
+    		} else if(type == 3) {
+    			mat.setColor("Color", ColorRGBA.Blue);
+    		} else if(type == 4) {
+    			mat.setColor("Color", ColorRGBA.Green);
+    		} else if(type == 5) {
+    			mat.setColor("Color", ColorRGBA.DarkGray);
+    		} else if(type == 6) {
+    			mat.setColor("Color", ColorRGBA.Pink);
+    		} else {
+    			mat.setColor("Color", ColorRGBA.Black);
+    		}
 			
+    		
+    		Cylinder c = new Cylinder(16, 16, radie, length, true);
+    		Geometry cannon = new Geometry("cannon", c);
+    		cannon.setMaterial(mat);
+    		
+    		getNode().attachChild(cannon);
 		}
 
 		@Override
-		public void read(JmeImporter arg0) throws IOException {
-			// TODO Auto-generated method stub
-			
-		}
+    	public void read(JmeImporter ex) throws IOException {
+    		OutputCapsule capsule = (OutputCapsule) ex.getCapsule(this);
+            capsule.write(type,  "type", 0);
+            capsule.write(radie,  "radie", 0);
+            capsule.write(length,  "length", 0);
+    	}
+
+    	@Override
+    	public void write(JmeExporter im) throws IOException {
+            InputCapsule capsule = (InputCapsule) im.getCapsule(this);
+            type = capsule.readInt("type", 0);
+            radie = capsule.readFloat("radie", 1f);
+            length = capsule.readFloat("length", 4f);
+    	}
 
 		@Override
-		public void write(JmeExporter arg0) throws IOException {
-			// TODO Auto-generated method stub
-			
+		public void onActivate() {
+			// fire the cannon
 		}
 
 		@Override
 		public void onClick() {
-			// TODO Auto-generated method stub
-			
+			Object o = getNode().getParent().getUserData("class");
+			if(o != null && o instanceof MyNode) {
+				((MyNode) o).onClick(); // kick up to the parent
+			}
 		}
 
-		@Override
-		public void onColide(String withWhatId) {
-			// TODO Auto-generated method stub
-			
-		}
     }
 }
