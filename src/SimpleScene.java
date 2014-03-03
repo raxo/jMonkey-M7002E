@@ -15,7 +15,17 @@ import com.jme3.asset.AssetManager;
 import com.jme3.asset.TextureKey;
 import com.jme3.audio.AudioNode;
 import com.jme3.audio.LowPassFilter;
+import com.jme3.bullet.BulletAppState;
+import com.jme3.bullet.PhysicsSpace;
+import com.jme3.bullet.collision.PhysicsCollisionEvent;
+import com.jme3.bullet.collision.PhysicsCollisionListener;
+import com.jme3.bullet.collision.shapes.BoxCollisionShape;
+import com.jme3.bullet.collision.shapes.CollisionShape;
+import com.jme3.bullet.collision.shapes.HullCollisionShape;
+import com.jme3.bullet.collision.shapes.MeshCollisionShape;
 import com.jme3.bullet.collision.shapes.PlaneCollisionShape;
+import com.jme3.bullet.control.GhostControl;
+import com.jme3.bullet.control.RigidBodyControl;
 import com.jme3.cinematic.MotionPath;
 import com.jme3.cinematic.MotionPathListener;
 import com.jme3.cinematic.events.MotionEvent;
@@ -23,6 +33,7 @@ import com.jme3.cinematic.events.MotionTrack;
 import com.jme3.collision.Collidable;
 import com.jme3.collision.CollisionResult;
 import com.jme3.collision.CollisionResults;
+import com.jme3.effect.ParticleEmitter;
 import com.jme3.export.InputCapsule;
 import com.jme3.export.JmeExporter;
 import com.jme3.export.JmeImporter;
@@ -60,6 +71,7 @@ import com.jme3.scene.control.CameraControl.ControlDirection;
 import com.jme3.scene.shape.Box;
 import com.jme3.scene.shape.Cylinder;
 import com.jme3.scene.shape.Sphere;
+import com.jme3.scene.shape.Sphere.TextureMode;
 import com.jme3.scene.shape.Surface;
 import com.jme3.texture.Texture;
 import com.jme3.texture.Texture.WrapAxis;
@@ -74,7 +86,7 @@ import com.jme3.water.WaterFilter;
  * @author oskkla-9
  * 
  */
-public class SimpleScene extends SimpleApplication {
+public class SimpleScene extends SimpleApplication implements PhysicsCollisionListener {
  
 	private FilterPostProcessor fpp;
 	private WaterFilter water;
@@ -83,6 +95,7 @@ public class SimpleScene extends SimpleApplication {
 	private boolean enableWaterBobbing = true, enableEarthquake = false, enableSail = false, shipIsSunken = false;
 	MotionEvent Earthquaker, SinkShip;
 	Geometry mark;
+	protected BulletAppState bulletAppState;
 	
     public static void main(String[] args){
     	SimpleScene app = new SimpleScene();
@@ -91,6 +104,11 @@ public class SimpleScene extends SimpleApplication {
  
     @Override
     public void simpleInitApp() {
+
+        bulletAppState = new BulletAppState();
+        stateManager.attach(bulletAppState);
+        getPhysicsSpace().enableDebug(assetManager);
+        getPhysicsSpace().addCollisionListener(this);
     	
         // You must add a light to make the model visible
         DirectionalLight sun = new DirectionalLight();
@@ -139,7 +157,7 @@ public class SimpleScene extends SimpleApplication {
         path.addWayPoint(new Vector3f(0, 0, 1));
         path.setCycle(true);
         Earthquaker = new MotionEvent(solidNode,path);
-        Earthquaker.setLoopMode(LoopMode.Cycle);
+        Earthquaker.setLoopMode(LoopMode.DontLoop);
         Earthquaker.setSpeed(20f);
         
         
@@ -156,13 +174,6 @@ public class SimpleScene extends SimpleApplication {
         s.setDimentions(20, 16, 80, 14);
         s.build();
         floatingNode.getChild("longship").setLocalTranslation(0, 0, 40);
-        MotionPath shipPath = new MotionPath();
-        shipPath.addWayPoint(new Vector3f(0, 0, 40));
-        shipPath.addWayPoint(new Vector3f(0, -50, 40));
-        shipPath.setCycle(false);
-        SinkShip = new MotionEvent(floatingNode.getChild("longship"),shipPath);
-        SinkShip.setLoopMode(LoopMode.DontLoop);
-        SinkShip.setSpeed(5f);
         
         // picking
         mark = new Geometry("mark", new Sphere(30, 30, 0.2f));
@@ -186,6 +197,10 @@ public class SimpleScene extends SimpleApplication {
         
     }
     
+    private PhysicsSpace getPhysicsSpace(){
+        return bulletAppState.getPhysicsSpace();
+    }
+    
     private ActionListener actionListener = new ActionListener() {
     	public void onAction(String name, boolean keyPressed, float tpf) {
         	if (name.equals("Earthquake") && keyPressed) {
@@ -193,13 +208,15 @@ public class SimpleScene extends SimpleApplication {
         		if(enableEarthquake) {
         			Earthquaker.play();
 	            } else {
-	            	Earthquaker.stop();
+	            	//Earthquaker.stop();
 	        	}
         	}
+        	/*
         	if (name.equals("FIRE") && keyPressed && !shipIsSunken) {
     			SinkShip.play();
     			shipIsSunken = true;
         	}
+        	*/
         	if (name.equals("WaterBobbing") && keyPressed) {
         		enableWaterBobbing = !enableWaterBobbing;
         	}
@@ -240,7 +257,6 @@ public class SimpleScene extends SimpleApplication {
     			enableSail = !enableSail;
     			shipIsAccelerating = true;
 				toogleAim();
-				toogleGUI();
 				
     			// toggle camera
     			// http://hub.jmonkeyengine.org/wiki/doku.php/jme3:advanced:making_the_camera_follow_a_character
@@ -340,6 +356,22 @@ public class SimpleScene extends SimpleApplication {
         }
         
     }
+
+	@Override
+	public void collision(PhysicsCollisionEvent e) {
+		Object o = e.getNodeA().getUserData("class");
+		if(o != null && o instanceof MyCollideable) {
+			((MyCollideable) o).onCollide(e.getNodeB().getName(), e);
+		} else {
+			System.out.println("nodeA is not MyNode: "+e.getNodeA());
+		}
+		o = e.getNodeB().getUserData("class");
+		if(o != null && o instanceof MyCollideable) {
+			((MyCollideable) o).onCollide(e.getNodeA().getName(), e);
+		} else {
+			System.out.println("nodeB is not MyNode: "+e.getNodeB());
+		}
+	}
     
     protected void toogleAim() {
     	if(guiNode.getChild("aim") == null) {
@@ -355,30 +387,40 @@ public class SimpleScene extends SimpleApplication {
     		guiNode.detachChildNamed("aim");
     	}
     }
-    
-    protected void toogleGUI() {
-    	
-    }
 
     interface MyClickable {
     	public void onClick();
     }
+    interface MyCollideable {
+    	public void onCollide(String withWhatId, PhysicsCollisionEvent e);
+    }
     
-    abstract class MyNode implements Savable, MyClickable {
+    abstract class MyNode implements Savable, MyClickable, MyCollideable {
     	protected Node node, parentNode;
     	
     	protected ActionListener onActivate;
     	
-    	abstract public void onClick();
-		public void onColide(String withWhatId) {
-			Object o = getNode().getParent().getUserData("class");
-			if(o != null && o instanceof MyNode) {
-				((MyNode) o).onColide(withWhatId); // kick up to the parent
+    	//abstract public void onClick();
+		public void onClick() {
+			Node o = getNode().getParent();
+			while(o != null) { // while not root
+				System.out.println("Clicked on "+o.getName());
+				if(o.getUserData("class") != null && o.getUserData("class") instanceof MyNode) {
+					((MyNode) o.getUserData("class")).onClick(); // kick up to the parent
+				}
+				o = o.getParent();
 			}
 		}
-    	public void onActivate() {
-    		
-    	}
+		public void onCollide(String withWhatId, PhysicsCollisionEvent e) {
+			Node o = getNode().getParent();
+			while(o != null) { // while not root
+				System.out.println("Clicked on "+o.getName());
+				if(o.getUserData("class") != null && o.getUserData("class") instanceof MyNode) {
+					((MyNode) o.getUserData("class")).onCollide(withWhatId, e); // kick up to the parent
+				}
+				o = o.getParent();
+			}
+		}
     	
     	public MyNode(Node parentNode, String id) {
     		node = new Node(id);
@@ -426,16 +468,26 @@ public class SimpleScene extends SimpleApplication {
     		Sphere s = new Sphere(20, 20, width/2);
     		Geometry island = new Geometry("landmass", s);
     		island.setMaterial(mat);
+    		island.setUserData("class", this);
+    		
+    		HullCollisionShape c = new HullCollisionShape(s);
+    		island.setLocalScale(new Vector3f(5, 0.2f, 3));
+    		// c.setScale(island.getLocalScale()); // wtf?
+    		c.setScale(new Vector3f(2.3f,0.5f,1.8f));
+    		GhostControl ghostControl = new GhostControl(c);
+    		
     		
     		Spatial palm = assetManager.loadModel("Models/palm.obj"); // http://www.the3dmodelstore.com/free.php
     		palm.setLocalScale(new Vector3f(0.2f, 0.2f, 0.2f));
     		node.attachChild(palm);
     		
     		node.setLocalTranslation(new Vector3f(0, 10f, 0f));
-    		island.setLocalScale(5, 0.2f, 3);
     		
     		node.attachChild(island);
     		parentNode.attachChild(node);
+
+    		island.addControl(ghostControl);
+            getPhysicsSpace().add(island);
     	}
     	
     	@Override
@@ -452,14 +504,13 @@ public class SimpleScene extends SimpleApplication {
 
 		@Override
 		public void onClick() {
-			System.out.println("Clicked on island");
+			//System.out.println("Clicked on island");
 			actionListener.onAction("Earthquake", true, 0);
 		}
 
 		@Override
-		public void onColide(String withWhatId) {
-			// TODO Auto-generated method stub
-			
+		public void onCollide(String withWhatId, PhysicsCollisionEvent e) {
+			onClick();
 		}
     	
     }
@@ -516,10 +567,24 @@ public class SimpleScene extends SimpleApplication {
     		Node cannonNode = c.getNode();
     		cannonNode.setLocalTranslation(lengthFromFront, (hullHeight-waterDepth)/2, hullWidth/2);
     		getNode().attachChild(cannonNode);
-    		
-    		cannonNode = (Node) cannonNode.clone();
+
+    		c = new Cannon(getNode(), "cannon");
+    		c.setType(type);
+    		c.setLength(hullWidth/4);
+    		c.setRadie((hullHeight-waterDepth)/8);
+    		c.build();
+    		cannonNode = c.getNode();
+    		cannonNode.setLocalRotation(new Quaternion().fromAngleAxis(FastMath.PI, Vector3f.UNIT_Y)); // rotate fire direction
     		cannonNode.setLocalTranslation(lengthFromFront, (hullHeight-waterDepth)/2, -hullWidth/2);
     		getNode().attachChild(cannonNode);
+    		
+    		/*
+    		 // cloning messes with the direction of fire(), and i dont know why D:
+    		cannonNode = (Node) cannonNode.clone();
+    		cannonNode.setLocalRotation(new Quaternion().fromAngleAxis(FastMath.PI, Vector3f.UNIT_Y)); // rotate fire direction
+    		cannonNode.setLocalTranslation(lengthFromFront, (hullHeight-waterDepth)/2, -hullWidth/2);
+    		getNode().attachChild(cannonNode);
+    		*/
     		
     	}
     	
@@ -746,10 +811,17 @@ public class SimpleScene extends SimpleApplication {
 
             hull.setMaterial(mat);
 
-            hull.setLocalTranslation(new Vector3f(0,hullHeight-waterDepth,0));
+            Node hullNode = new Node("hullNode");
+            hullNode.setUserData("class", this);
+            hullNode.attachChild(hull);
+            hullNode.setLocalTranslation(new Vector3f(0,hullHeight-waterDepth,0));
+            getNode().attachChild(hullNode);
+
+            GhostControl ghostControl = new GhostControl(new HullCollisionShape(m));
+            hullNode.addControl(ghostControl);
+            getPhysicsSpace().add(hullNode);
             
             
-            node.attachChild(hull);
     	}
 
     	@Override
@@ -799,7 +871,7 @@ public class SimpleScene extends SimpleApplication {
 			System.out.println("Clicked on Ship!");
 			
 			Vector<Node> cannons = getCannons(getNode());
-			String[] args = new String[]{};
+			String[] args = new String[cannons.size()+2];
 			
 			if(!enableSail) {
 				controllingNode = getNode();
@@ -812,19 +884,50 @@ public class SimpleScene extends SimpleApplication {
 						args[cannons.indexOf(n)] = "fireCannon"+cannons.indexOf(n);
 					}
 				}
+				
+				// fire all on each side
+				inputManager.addMapping("fireCannonLeft", new KeyTrigger(KeyInput.KEY_LEFT));
+				inputManager.addMapping("fireCannonRight", new KeyTrigger(KeyInput.KEY_RIGHT));
+				args[cannons.size()] = "fireCannonLeft";
+				args[cannons.size()+1] = "fireCannonRight";
+				
+				
 				shipsActionListener = new ActionListener() {
 					
 					@Override
 					public void onAction(String name, boolean pressed, float t) {
-						if(name.substring(0, ("fireCannon").length()) == "fireCannon") {
+						Vector<Node> cannons = getCannons(controllingNode);
+						if(name.equals("fireCannonLeft") && pressed) {
+							int i = 0;
+							for(Node cannonNode : cannons) {
+								if(i % 2 == 0) {
+									Object o = cannonNode.getUserData("class");
+									if(o != null && o instanceof Cannon) {
+										((Cannon) o).fire();
+									}
+								}
+								i++;
+							}
+						} else if(name.equals("fireCannonRight") && pressed) {
+							int i = 0;
+							for(Node cannonNode : cannons) {
+								if(i % 2 != 0) {
+									Object o = cannonNode.getUserData("class");
+									if(o != null && o instanceof Cannon) {
+										((Cannon) o).fire();
+									}
+								}
+								i++;
+							}
+						} else if(name.substring(0, ("fireCannon").length()).equals("fireCannon") && pressed) {
 							int i = Integer.parseInt(name.substring(("fireCannon").length()));
-							Vector<Node> cannons = getCannons(controllingNode);
-							if(cannons.size() > i) {
+							if(cannons.size() <= i) {
+								System.err.println("Cannon dos not exist, clean the listiner pls");
 								return;
 							}
 							Object o = cannons.get(i).getUserData("class");
 							if(o != null && o instanceof Cannon) {
-								((Cannon) o).onActivate();
+								((Cannon) o).fire();
 							}
 						}
 					}
@@ -841,11 +944,40 @@ public class SimpleScene extends SimpleApplication {
 			}
 			actionListener.onAction("SetSail", true, 0);
 		}
+		
+		private void startSinkProcess() {
+
+	        MotionPath shipPath = new MotionPath();
+	        shipPath.addWayPoint(getNode().getLocalTranslation());
+	        shipPath.addWayPoint(new Vector3f(
+	        		getNode().getLocalTranslation().x,
+	        		getNode().getLocalTranslation().y-50f,
+	        		getNode().getLocalTranslation().z
+    		));
+	        shipPath.setCycle(false);
+	        MotionEvent SinkShip = new MotionEvent(getNode(),shipPath);
+	        SinkShip.setLoopMode(LoopMode.DontLoop);
+	        SinkShip.setSpeed(5f);
+	        SinkShip.play();
+		}
 
 		@Override
-		public void onColide(String withWhatId) {
-			// TODO Auto-generated method stub
-			
+		public void onCollide(String withWhatId, PhysicsCollisionEvent e) {
+			System.out.println(withWhatId+" colided with this ship!");
+			switch(withWhatId) { 
+				case "cannonBall":
+					
+					break;
+				case "hullNode":
+					if(getNode() != controllingNode) {
+						shipCurrentpSpeed = 0f;
+						shipIsAccelerating = true;
+						startSinkProcess();
+					}
+					break;
+				default:
+					break;
+			}
 		}
     }
     
@@ -865,10 +997,17 @@ public class SimpleScene extends SimpleApplication {
     	private int type = 0;
     	private float length;
     	private float radie;
-
+    	private float cannonBallSpeed = 70f;
+    	private ParticleEmitter flame, flash, spark, roundspark, smoketrail, debris, shockwave;
+    	private Sphere sphere;
+    	private Material stone_mat;
+    	
+    	private long timestamp = 0;
+    	private long reloadtime = 5; // sec
+ 
 		public Cannon(Node parentNode, String id) {
 			super(parentNode, id);
-			
+		    
 		}
 
 		public void setType(int type) {
@@ -903,10 +1042,31 @@ public class SimpleScene extends SimpleApplication {
 			
     		
     		Cylinder c = new Cylinder(16, 16, radie, length, true);
-    		Geometry cannon = new Geometry("cannon", c);
+    		Geometry cannon = new Geometry("cannonBarrel", c);
     		cannon.setMaterial(mat);
     		
     		getNode().attachChild(cannon);
+    		
+			sphere = new Sphere(32, 32, radie/1.5f, true, false);
+		    sphere.setTextureMode(TextureMode.Projected);
+		    
+		    stone_mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+		    TextureKey key2 = new TextureKey("Textures/Terrain/Rock/Rock.PNG");
+		    key2.setGenerateMips(true);
+		    Texture tex2 = assetManager.loadTexture(key2);
+		    stone_mat.setTexture("ColorMap", tex2);
+		    
+		    AudioNode fireSound = new AudioNode(assetManager, "Sound/Effects/Gun.wav");
+		    fireSound.setPositional(true);
+		    fireSound.setLooping(false);
+		    fireSound.setLocalTranslation(cannon.getLocalTranslation());
+		    fireSound.setVolume(1f);
+		    fireSound.setName("fireSound");
+
+		    getNode().attachChild(fireSound);
+
+    		// https://code.google.com/p/jmonkeyengine/source/browse/trunk/engine/src/test/jme3test/effect/TestExplosionEffect.java
+    		
 		}
 
 		@Override
@@ -915,6 +1075,9 @@ public class SimpleScene extends SimpleApplication {
             capsule.write(type,  "type", 0);
             capsule.write(radie,  "radie", 0);
             capsule.write(length,  "length", 0);
+            capsule.write(timestamp,  "timestamp", 0);
+            capsule.write(reloadtime,  "reloadtime", 0);
+            capsule.write(cannonBallSpeed,  "cannonBallSpeed", 0);
     	}
 
     	@Override
@@ -923,20 +1086,61 @@ public class SimpleScene extends SimpleApplication {
             type = capsule.readInt("type", 0);
             radie = capsule.readFloat("radie", 1f);
             length = capsule.readFloat("length", 4f);
+            timestamp = capsule.readLong("timestamp", 0);
+            reloadtime = capsule.readLong("timestamp", 5);
+            cannonBallSpeed = capsule.readFloat("cannonBallSpeed", 70f);
     	}
-
-		@Override
-		public void onActivate() {
-			// fire the cannon
-		}
-
-		@Override
-		public void onClick() {
-			Object o = getNode().getParent().getUserData("class");
-			if(o != null && o instanceof MyNode) {
-				((MyNode) o).onClick(); // kick up to the parent
+    	
+    	
+		public void fire() {
+			long currentTimestamp = System.currentTimeMillis() / 1000;
+			if(timestamp != 0 && currentTimestamp-timestamp < reloadtime) {
+				// reloading
+				return ;
+			}
+			if(getNode().getChild("cannonBall") != null) {
+				getPhysicsSpace().remove(getNode().getChild("cannonBall").getControl(0));
+				getNode().detachChildNamed("cannonBall");
+			}
+			timestamp = currentTimestamp;
+			System.out.println("FIRE");
+		    final Geometry bullet = new Geometry("cannonBall", sphere);
+		    bullet.setMaterial(stone_mat);
+		    getNode().attachChild(bullet);
+		    Geometry cannon = (Geometry) getNode().getChild("cannonBarrel");
+		    bullet.setLocalTranslation(new Vector3f(
+				cannon.getLocalTranslation().x, 
+				cannon.getLocalTranslation().y, 
+				cannon.getLocalTranslation().z+length/2
+			));
+		    RigidBodyControl ball_phy = new RigidBodyControl(0.05f);
+		    bullet.addControl(ball_phy);
+		    
+		    bullet.setUserData("class", new MyNode(null, null) {
+		    	@Override
+				public void onCollide(String withWhatId, PhysicsCollisionEvent e) {
+					System.out.println(withWhatId+" colided with this bullet!");
+					getPhysicsSpace().remove(bullet.getControl(0));
+					bullet.removeFromParent();
+				}
+		    	
+				@Override
+				public void write(JmeExporter arg0) throws IOException { }
+				
+				@Override
+				public void read(JmeImporter arg0) throws IOException { }
+			});
+		    getPhysicsSpace().add(ball_phy);
+		    
+			ball_phy.setLinearVelocity(cannon.getWorldRotation().mult(Vector3f.UNIT_Z).normalizeLocal().mult(70) );
+			
+			if(getNode().getChild("fireSound") != null) {
+				((AudioNode) getNode().getChild("fireSound")).playInstance();
 			}
 		}
-
+		
+		public void onClick() {
+			fire();
+		}
     }
 }
