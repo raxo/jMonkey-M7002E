@@ -21,11 +21,14 @@ import com.jme3.bullet.collision.PhysicsCollisionEvent;
 import com.jme3.bullet.collision.PhysicsCollisionListener;
 import com.jme3.bullet.collision.shapes.BoxCollisionShape;
 import com.jme3.bullet.collision.shapes.CollisionShape;
+import com.jme3.bullet.collision.shapes.CompoundCollisionShape;
 import com.jme3.bullet.collision.shapes.HullCollisionShape;
 import com.jme3.bullet.collision.shapes.MeshCollisionShape;
 import com.jme3.bullet.collision.shapes.PlaneCollisionShape;
+import com.jme3.bullet.collision.shapes.SphereCollisionShape;
 import com.jme3.bullet.control.GhostControl;
 import com.jme3.bullet.control.RigidBodyControl;
+import com.jme3.bullet.util.CollisionShapeFactory;
 import com.jme3.cinematic.MotionPath;
 import com.jme3.cinematic.MotionPathListener;
 import com.jme3.cinematic.events.MotionEvent;
@@ -354,7 +357,14 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
         	controllingNode.move(v);
         	
         }
-        
+        if(enableSail) {
+        	rootNode.updateGeometricState();
+        	CollisionResults results = new CollisionResults();
+        	GhostControl gh = (GhostControl) controllingNode.getChild("hullNode").getControl(0);
+        	if(gh.getOverlappingCount() > 0) {
+        		System.out.println("collided with "+gh.getOverlappingCount()+" objects");
+        	}
+        }
     }
 
 	@Override
@@ -470,23 +480,33 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     		island.setMaterial(mat);
     		island.setUserData("class", this);
     		
-    		HullCollisionShape c = new HullCollisionShape(s);
-    		island.setLocalScale(new Vector3f(5, 0.2f, 3));
-    		// c.setScale(island.getLocalScale()); // wtf?
-    		c.setScale(new Vector3f(2.3f,0.5f,1.8f));
-    		GhostControl ghostControl = new GhostControl(c);
     		
+    		island.setLocalScale(new Vector3f(5, 0.2f, 3));
+    		//island.getControl(RigidBodyControl.class).getCollisionShape().setScale(island.getLocalScale()); // wtf?
+    		
+    		//SphereCollisionShape c = new SphereCollisionShape(width/2);
+    		//c.setScale(island.getLocalScale()); // wtf?
+    		//c.setScale(new Vector3f(2.3f,0.1f,1.4f));
+    		//GhostControl ghostControl = new GhostControl(c);
+
+    		node.attachChild(island);
     		
     		Spatial palm = assetManager.loadModel("Models/palm.obj"); // http://www.the3dmodelstore.com/free.php
     		palm.setLocalScale(new Vector3f(0.2f, 0.2f, 0.2f));
     		node.attachChild(palm);
-    		
+
     		node.setLocalTranslation(new Vector3f(0, 10f, 0f));
     		
-    		node.attachChild(island);
     		parentNode.attachChild(node);
+    		
 
-    		island.addControl(ghostControl);
+    		CollisionShape shape = CollisionShapeFactory.createMeshShape(island);
+    		
+    		island.addControl(new RigidBodyControl(shape, 1.0f));
+    		island.getControl(RigidBodyControl.class).setKinematic(true);
+    		//island.getControl(RigidBodyControl.class).getCollisionShape().setScale(new Vector3f(2.3f,1f,1.4f));
+    		
+    		//island.addControl(ghostControl);
             getPhysicsSpace().add(island);
     	}
     	
