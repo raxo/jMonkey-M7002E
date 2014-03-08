@@ -36,6 +36,7 @@ import com.jme3.cinematic.events.MotionTrack;
 import com.jme3.collision.Collidable;
 import com.jme3.collision.CollisionResult;
 import com.jme3.collision.CollisionResults;
+import com.jme3.cursors.plugins.JmeCursor;
 import com.jme3.effect.ParticleEmitter;
 import com.jme3.export.InputCapsule;
 import com.jme3.export.JmeExporter;
@@ -43,11 +44,13 @@ import com.jme3.export.JmeImporter;
 import com.jme3.export.OutputCapsule;
 import com.jme3.export.Savable;
 import com.jme3.font.BitmapText;
+import com.jme3.input.ChaseCamera;
 import com.jme3.input.KeyInput;
 import com.jme3.input.MouseInput;
 import com.jme3.input.controls.ActionListener;
 import com.jme3.input.controls.AnalogListener;
 import com.jme3.input.controls.KeyTrigger;
+import com.jme3.input.controls.MouseAxisTrigger;
 import com.jme3.input.controls.MouseButtonTrigger;
 import com.jme3.input.controls.Trigger;
 import com.jme3.light.DirectionalLight;
@@ -99,6 +102,7 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 	MotionEvent Earthquaker, SinkShip;
 	Geometry mark;
 	protected BulletAppState bulletAppState;
+	protected ChaseCamera chaseCam;
 	
     public static void main(String[] args){
     	SimpleScene app = new SimpleScene();
@@ -196,8 +200,10 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
         inputManager.addMapping("Picking", new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
         // Add the names to the action listener.
         inputManager.addListener(actionListener,"Picking", "Earthquake", "WaterBobbing", "SetSail", "FIRE");
-        inputManager.addListener(analogListener,"Left", "Right", "Rotate");
-        
+
+        inputManager.addMapping("rotateRight", new MouseAxisTrigger(MouseInput.AXIS_X, true));
+        inputManager.addMapping("rotateLeft", new MouseAxisTrigger(MouseInput.AXIS_X, false));
+        inputManager.addListener(analogListener,"Left", "Right", "Rotate", "rotateLeft", "rotateRight");
     }
     
     private PhysicsSpace getPhysicsSpace(){
@@ -229,7 +235,7 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     			// 1. Reset results list.
                 CollisionResults results = new CollisionResults();
                 // 2. Aim the ray from cam loc to cam direction.
-                Ray ray;
+                /*Ray ray;
                 if(enableSail) {
                 	// http://hub.jmonkeyengine.org/wiki/doku.php/jme3:advanced:mouse_picking
                 	Vector2f click2d = inputManager.getCursorPosition();
@@ -238,7 +244,8 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
                 	ray = new Ray(click3d, dir);
                 } else {
                 	ray = new Ray(cam.getLocation(), cam.getDirection());
-                }
+                }*/
+                Ray ray = new Ray(cam.getLocation(), cam.getDirection());
 				// 3. Collect intersections between Ray and Shootables in results list.
                 pickable.collideWith(ray, results);
                 // 4. Print results.
@@ -259,12 +266,32 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     		if (name.equals("SetSail") && keyPressed) {
     			enableSail = !enableSail;
     			shipIsAccelerating = true;
-				toogleAim();
+				//toogleAim();
 				
     			// toggle camera
     			// http://hub.jmonkeyengine.org/wiki/doku.php/jme3:advanced:making_the_camera_follow_a_character
     			if(enableSail) {
     				flyCam.setEnabled(false);
+    				
+    				chaseCam = new ChaseCamera(cam, controllingNode, inputManager);
+    				chaseCam.setSmoothMotion(false);
+    				chaseCam.setLookAtOffset(new Vector3f(0, 0, 0));
+    				//chaseCam.setToggleRotationTrigger(new MouseAxisTrigger(MouseInput.AXIS_X, false), new MouseAxisTrigger(MouseInput.AXIS_X, true));
+    				chaseCam.setRotationSensitivity(0.1f);
+    				chaseCam.setChasingSensitivity(10f);
+    				chaseCam.setDragToRotate(false);
+    				chaseCam.setInvertVerticalAxis(false);
+    				chaseCam.setMaxDistance(100);
+    				chaseCam.setMinDistance(200);
+    				inputManager.deleteMapping("ChaseCamDown");
+    				inputManager.deleteMapping("ChaseCamUp");
+    				//inputManager.deleteMapping("ChaseCamMoveLeft");
+    				//inputManager.deleteMapping("ChaseCamMoveRight");
+    				
+
+    				if(true)
+    					return;
+    				/*
     				CameraNode camNode = new CameraNode("Camera Node", cam);
     				camNode.setControlDir(ControlDirection.SpatialToCamera);
     				controllingNode.attachChild(camNode);
@@ -279,7 +306,13 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     				v.y = s.hullHeight*3;
     				camNode.setLocalTranslation(v);
     				camNode.lookAt(controllingNode.getLocalTranslation(), Vector3f.UNIT_Y);
+    				
+    				inputManager.setCursorVisible(true);
+    				*/
     			} else {
+    				chaseCam.setEnabled(false);
+    				flyCam.setEnabled(true);
+    				flyCam.setDragToRotate(false);
     				if(controllingNode.getChild("Camera Node") == null) {
     					return;
     				}
@@ -301,10 +334,29 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 
     		}
     		if (name.equals("Left") && controllingNode != null && enableSail) {
-    			controllingNode.rotate(0, value/2, 0);
+    			controllingNode.rotate(0, value/(((Ship)controllingNode.getUserData("class")).hullLength)*5, 0);
     		}
         	if (name.equals("Right") && controllingNode != null && enableSail) {
-    			controllingNode.rotate(0, -value/2, 0);
+    			controllingNode.rotate(0, -value/(((Ship)controllingNode.getUserData("class")).hullLength)*5, 0);
+        	}
+        	if (name.equals("rotateLeft") && controllingNode != null && enableSail) {
+        		if(controllingNode.getChild("Camera Node") == null) {
+					return;
+				}
+        		CameraNode camNode = (CameraNode) controllingNode.getChild("Camera Node");
+        		Quaternion rot = new Quaternion();
+        		rot.lookAt(new Vector3f(1,0,0), new Vector3f(0,1,0));
+        		rot.multLocal(new Vector3f(0, -value, 0));
+        		//camNode.setLocalRotation(rot);
+				//camNode.rotate(rot );
+        		//camNode.rotate(0, -value, 0);
+        	}
+        	if (name.equals("rotateRight") && controllingNode != null && enableSail) {
+        		if(controllingNode.getChild("Camera Node") == null) {
+					return;
+				}
+        		CameraNode camNode = (CameraNode) controllingNode.getChild("Camera Node");
+        		//camNode.rotate(0, value, 0);
         	}
         }
     };
@@ -500,14 +552,14 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     		parentNode.attachChild(node);
     		
 
-    		CollisionShape shape = CollisionShapeFactory.createMeshShape(island);
+    		CollisionShape shape = CollisionShapeFactory.createDynamicMeshShape(island);
     		
     		island.addControl(new RigidBodyControl(shape, 1.0f));
     		island.getControl(RigidBodyControl.class).setKinematic(true);
     		//island.getControl(RigidBodyControl.class).getCollisionShape().setScale(new Vector3f(2.3f,1f,1.4f));
     		
     		//island.addControl(ghostControl);
-            getPhysicsSpace().add(island);
+            //getPhysicsSpace().add(island);
     	}
     	
     	@Override
@@ -563,9 +615,13 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     		float mastSpace = 2*(hullHeight-waterDepth);
     		float mast = mastSpace;
     		
+    		int type = 1;
     		while(0 < mast && mast < hullLength-hullLength/6) {
     			addMast(mast);
-    			addCannon(mast, 1);
+    			addCannon(mast, type);
+        		type++;
+    			addCannon(mast+mastSpace/2, type);
+        		type++;
         		mast += mastSpace;
     		}
 
@@ -987,6 +1043,7 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 			switch(withWhatId) { 
 				case "cannonBall":
 					
+					
 					break;
 				case "hullNode":
 					if(getNode() != controllingNode) {
@@ -1006,10 +1063,10 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     	final public int[] cannonTypes = {
 			0, // nothing
 			1, // destruct
-			2, // scale
-			3, // teleport
+			2, // scale up
+			3, // scale down
 			4, // repaint
-			5, // trigger collide
+			5, // trigger collide // derp, i sometimes have unlucky thoughts
 			6, // trigger click
 			7 // flame
     	};
@@ -1135,15 +1192,67 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 			));
 		    RigidBodyControl ball_phy = new RigidBodyControl(0.05f);
 		    bullet.addControl(ball_phy);
-		    
+		    bullet.setUserData("type", type);
 		    bullet.setUserData("class", new MyNode(null, null) {
 		    	@Override
 				public void onCollide(String withWhatId, PhysicsCollisionEvent e) {
 					System.out.println(withWhatId+" colided with this bullet!");
 					getPhysicsSpace().remove(bullet.getControl(0));
 					bullet.removeFromParent();
+					
+					Spatial otherSpatial;
+					Object a = e.getNodeA().getUserData("type");
+					Object b = e.getNodeB().getUserData("class");
+					if(a == null) {
+						a = e.getNodeB().getUserData("type");
+						b = e.getNodeA().getUserData("class");
+						otherSpatial = e.getNodeA();
+					} else {
+						otherSpatial = e.getNodeB();
+					}
+					
+					
+					int type = 0;
+					if(a != null) {
+						type = (int) a;
+					}
+					// 3 = destroy
+					if(type == 1 && b instanceof Ship) {
+						((Ship) b).startSinkProcess();
+					} else if(type == 1) {
+						otherSpatial.removeFromParent();
+					}
+					// 3 = scale up
+					else if(type == 2 && b instanceof MyNode) {
+						((MyNode) b).getNode().scale(1.1f,1.1f,1.1f);
+					}
+					else if(type == 2 && otherSpatial instanceof Node) {
+						((Node) otherSpatial).scale(1.1f,1.1f,1.1f);
+					}
+					// 3 = scale down
+					else if(type == 3 && b instanceof MyNode) {
+						((MyNode) b).getNode().scale(0.9f,0.9f,0.9f);
+					} else if(type == 3 && otherSpatial instanceof Node) {
+						((Node) otherSpatial).scale(0.9f,0.9f,0.9f);
+					} 
+					// 4 = repaint
+					else if(type == 4 && b instanceof MyNode) {
+						ChangeColor(((MyNode) b).getNode());
+					} else if(type == 4 && otherSpatial instanceof Node) {
+						ChangeColor((Node) otherSpatial);
+					}
+					// 6 = on click
+					else if(type == 6 && b instanceof MyCollideable) {
+						((MyNode) b).onClick();
+					}
+					// 7 = fire
+					
+					// if all fails..
+					else {
+						
+					}
+					
 				}
-		    	
 				@Override
 				public void write(JmeExporter arg0) throws IOException { }
 				
@@ -1156,6 +1265,23 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 			
 			if(getNode().getChild("fireSound") != null) {
 				((AudioNode) getNode().getChild("fireSound")).playInstance();
+			}
+		}
+		
+		protected void ChangeColor(Node n) {
+			List<Spatial> children = n.getChildren();
+			for(Spatial s : children) {
+				if(s instanceof Geometry) {
+					Random rand = new Random();
+					((Geometry) s).getMaterial().setColor("Color", new ColorRGBA(
+						rand.nextFloat(),
+						rand.nextFloat(),
+						rand.nextFloat(),
+						1f
+					));
+				} else if(s instanceof Node) {
+					ChangeColor((Node) s);
+				}
 			}
 		}
 		
