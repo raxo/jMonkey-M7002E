@@ -1,43 +1,27 @@
 import java.io.IOException;
-import java.text.MessageFormat;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.Vector;
 
-import javax.vecmath.Matrix3f;
-
-import jme3tools.optimize.TextureAtlas;
-
 import com.jme3.animation.LoopMode;
 import com.jme3.app.SimpleApplication;
-import com.jme3.asset.AssetManager;
 import com.jme3.asset.TextureKey;
 import com.jme3.audio.AudioNode;
-import com.jme3.audio.LowPassFilter;
 import com.jme3.bullet.BulletAppState;
 import com.jme3.bullet.PhysicsSpace;
 import com.jme3.bullet.collision.PhysicsCollisionEvent;
 import com.jme3.bullet.collision.PhysicsCollisionListener;
-import com.jme3.bullet.collision.shapes.BoxCollisionShape;
-import com.jme3.bullet.collision.shapes.CollisionShape;
-import com.jme3.bullet.collision.shapes.CompoundCollisionShape;
 import com.jme3.bullet.collision.shapes.HullCollisionShape;
-import com.jme3.bullet.collision.shapes.MeshCollisionShape;
-import com.jme3.bullet.collision.shapes.PlaneCollisionShape;
 import com.jme3.bullet.collision.shapes.SphereCollisionShape;
 import com.jme3.bullet.control.GhostControl;
 import com.jme3.bullet.control.RigidBodyControl;
-import com.jme3.bullet.util.CollisionShapeFactory;
 import com.jme3.cinematic.MotionPath;
 import com.jme3.cinematic.MotionPathListener;
 import com.jme3.cinematic.events.MotionEvent;
-import com.jme3.cinematic.events.MotionTrack;
-import com.jme3.collision.Collidable;
 import com.jme3.collision.CollisionResult;
 import com.jme3.collision.CollisionResults;
-import com.jme3.cursors.plugins.JmeCursor;
 import com.jme3.effect.ParticleEmitter;
+import com.jme3.effect.ParticleMesh;
 import com.jme3.export.InputCapsule;
 import com.jme3.export.JmeExporter;
 import com.jme3.export.JmeImporter;
@@ -52,21 +36,17 @@ import com.jme3.input.controls.AnalogListener;
 import com.jme3.input.controls.KeyTrigger;
 import com.jme3.input.controls.MouseAxisTrigger;
 import com.jme3.input.controls.MouseButtonTrigger;
-import com.jme3.input.controls.Trigger;
+import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
-import com.jme3.light.Light;
 import com.jme3.material.Material;
-import com.jme3.material.MaterialDef;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
-import com.jme3.math.Plane;
 import com.jme3.math.Quaternion;
 import com.jme3.math.Ray;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
-import com.jme3.math.Vector4f;
 import com.jme3.post.FilterPostProcessor;
-import com.jme3.post.filters.FogFilter;
+import com.jme3.post.ssao.SSAOFilter;
 import com.jme3.scene.CameraNode;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Mesh;
@@ -78,9 +58,7 @@ import com.jme3.scene.shape.Box;
 import com.jme3.scene.shape.Cylinder;
 import com.jme3.scene.shape.Sphere;
 import com.jme3.scene.shape.Sphere.TextureMode;
-import com.jme3.scene.shape.Surface;
 import com.jme3.texture.Texture;
-import com.jme3.texture.Texture.WrapAxis;
 import com.jme3.texture.Texture.WrapMode;
 import com.jme3.texture.Texture2D;
 import com.jme3.util.BufferUtils;
@@ -96,7 +74,7 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
  
 	private FilterPostProcessor fpp;
 	private WaterFilter water;
-	private Vector3f lightDir = new Vector3f(-4.9f, -1.3f, 5.9f);
+	private Vector3f lightDir = new Vector3f(0f, 100f, 0f);
 	private Node floatingNode, solidNode, controllingNode = null, pickable;
 	private boolean enableWaterBobbing = true, enableEarthquake = false, enableSail = false, shipIsSunken = false;
 	MotionEvent Earthquaker, SinkShip;
@@ -120,8 +98,18 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
         // You must add a light to make the model visible
         DirectionalLight sun = new DirectionalLight();
         sun.setDirection(new Vector3f(-0.1f, -0.7f, -1.0f));
+        sun.setColor(ColorRGBA.White);
         rootNode.addLight(sun);
+        
+        AmbientLight al = new AmbientLight();
+        al.setColor(ColorRGBA.White.mult(1.3f));
+        rootNode.addLight(al);
     	
+        FilterPostProcessor fpp = new FilterPostProcessor(assetManager);
+        SSAOFilter ssaoFilter = new SSAOFilter(12.94f, 43.92f, 0.33f, 0.61f);
+        fpp.addFilter(ssaoFilter);
+        viewPort.addProcessor(fpp);
+        
     	// water
     	fpp = new FilterPostProcessor(assetManager);
     	water = new WaterFilter(rootNode, lightDir);
@@ -135,6 +123,8 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     	water.setUseFoam(true);
     	water.setWaterTransparency(0.1f);
     	water.setFoamTexture( (Texture2D) assetManager.loadTexture("Common/MatDefs/Water/Textures/foam2.jpg"));
+    	water.setShininess(0f);
+    	water.setRefractionStrength(0f);
     	/*
     	AudioNode waves = new AudioNode(assetManager, "Sounds/RowingBoat.wav", false);
     	waves.setLooping(true);
@@ -182,17 +172,14 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
         s.build();
         floatingNode.getChild("longship").setLocalTranslation(0, 0, 40);
         
-        // picking
-        mark = new Geometry("mark", new Sphere(30, 30, 0.2f));
-        Material mark_mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-        mark_mat.setColor("Color", ColorRGBA.Red);
-        mark.setMaterial(mark_mat);
 		toogleAim();
         
         // input
         inputManager.addMapping("SetSail",  new KeyTrigger(KeyInput.KEY_R));
         inputManager.addMapping("Left",   new KeyTrigger(KeyInput.KEY_A));
         inputManager.addMapping("Right",  new KeyTrigger(KeyInput.KEY_D));
+        inputManager.addMapping("Speedup",   new KeyTrigger(KeyInput.KEY_W));
+        inputManager.addMapping("Slowdown",  new KeyTrigger(KeyInput.KEY_S));
         inputManager.addMapping("SetAnchor", new KeyTrigger(KeyInput.KEY_2));
         inputManager.addMapping("FIRE", new KeyTrigger(KeyInput.KEY_SPACE));
         inputManager.addMapping("Earthquake", new KeyTrigger(KeyInput.KEY_E));
@@ -203,7 +190,7 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 
         inputManager.addMapping("rotateRight", new MouseAxisTrigger(MouseInput.AXIS_X, true));
         inputManager.addMapping("rotateLeft", new MouseAxisTrigger(MouseInput.AXIS_X, false));
-        inputManager.addListener(analogListener,"Left", "Right", "Rotate", "rotateLeft", "rotateRight");
+        inputManager.addListener(analogListener,"Left", "Right", "Speedup", "Slowdown", "Rotate", "rotateLeft", "rotateRight");
     }
     
     private PhysicsSpace getPhysicsSpace(){
@@ -272,9 +259,9 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     			// http://hub.jmonkeyengine.org/wiki/doku.php/jme3:advanced:making_the_camera_follow_a_character
     			if(enableSail) {
     				flyCam.setEnabled(false);
-    				
+    				/*
     				chaseCam = new ChaseCamera(cam, controllingNode, inputManager);
-    				chaseCam.setSmoothMotion(false);
+    				chaseCam.setSmoothMotion(true);
     				chaseCam.setLookAtOffset(new Vector3f(0, 0, 0));
     				//chaseCam.setToggleRotationTrigger(new MouseAxisTrigger(MouseInput.AXIS_X, false), new MouseAxisTrigger(MouseInput.AXIS_X, true));
     				chaseCam.setRotationSensitivity(0.1f);
@@ -287,11 +274,8 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     				inputManager.deleteMapping("ChaseCamUp");
     				//inputManager.deleteMapping("ChaseCamMoveLeft");
     				//inputManager.deleteMapping("ChaseCamMoveRight");
-    				
+    				*/
 
-    				if(true)
-    					return;
-    				/*
     				CameraNode camNode = new CameraNode("Camera Node", cam);
     				camNode.setControlDir(ControlDirection.SpatialToCamera);
     				controllingNode.attachChild(camNode);
@@ -302,15 +286,14 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     				} else {
     					return;
     				}
-    				v.x = s.hullLength*3;
-    				v.y = s.hullHeight*3;
+    				v.x = s.hullLength*2;
+    				v.y = s.hullHeight;
     				camNode.setLocalTranslation(v);
-    				camNode.lookAt(controllingNode.getLocalTranslation(), Vector3f.UNIT_Y);
+    				//camNode.lookAt(controllingNode.getLocalTranslation(), Vector3f.UNIT_Y);
     				
-    				inputManager.setCursorVisible(true);
-    				*/
+    				inputManager.setCursorVisible(false);
+    				
     			} else {
-    				chaseCam.setEnabled(false);
     				flyCam.setEnabled(true);
     				flyCam.setDragToRotate(false);
     				if(controllingNode.getChild("Camera Node") == null) {
@@ -333,30 +316,32 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     		if (name.equals("SetAnchor")) {
 
     		}
+    		if (name.equals("Speedup") && controllingNode != null && enableSail) {
+    			shipIsAcceleratingDown = false;
+    			shipIsAccelerating = true;
+    		}
+    		if (name.equals("Slowdown") && controllingNode != null && enableSail) {
+    			shipIsAcceleratingDown = true;
+    		}
     		if (name.equals("Left") && controllingNode != null && enableSail) {
-    			controllingNode.rotate(0, value/(((Ship)controllingNode.getUserData("class")).hullLength)*5, 0);
+    			controllingNode.rotate(0, value/(((Ship)controllingNode.getUserData("class")).hullLength)*shipCurrentpSpeed/shipTopSpeed*5, 0);
     		}
         	if (name.equals("Right") && controllingNode != null && enableSail) {
-    			controllingNode.rotate(0, -value/(((Ship)controllingNode.getUserData("class")).hullLength)*5, 0);
+    			controllingNode.rotate(0, -value/(((Ship)controllingNode.getUserData("class")).hullLength)*shipCurrentpSpeed/shipTopSpeed*5, 0);
         	}
         	if (name.equals("rotateLeft") && controllingNode != null && enableSail) {
         		if(controllingNode.getChild("Camera Node") == null) {
 					return;
 				}
         		CameraNode camNode = (CameraNode) controllingNode.getChild("Camera Node");
-        		Quaternion rot = new Quaternion();
-        		rot.lookAt(new Vector3f(1,0,0), new Vector3f(0,1,0));
-        		rot.multLocal(new Vector3f(0, -value, 0));
-        		//camNode.setLocalRotation(rot);
-				//camNode.rotate(rot );
-        		//camNode.rotate(0, -value, 0);
+        		camNode.rotate(0, -value, 0);
         	}
         	if (name.equals("rotateRight") && controllingNode != null && enableSail) {
         		if(controllingNode.getChild("Camera Node") == null) {
 					return;
 				}
         		CameraNode camNode = (CameraNode) controllingNode.getChild("Camera Node");
-        		//camNode.rotate(0, value, 0);
+        		camNode.rotate(0, value, 0);
         	}
         }
     };
@@ -367,14 +352,24 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     private boolean uw = false;
     //AudioNode waves;
     
+    //private float shipTopSpeed = 0.05f;
     private float shipTopSpeed = 0.05f;
     private float shipCurrentpSpeed = 0f;
     private float shipAcceleration = 0.0001f;
-    private boolean shipIsAccelerating = false;
+    private boolean shipIsAccelerating = false, shipIsAcceleratingDown = false;
+    
+    private float spawnTimer = 0.0f;
+    private float spawnInterval = 10f;
+    private int spawnCount = 0, spawnMaxCount = 10;
     
     @Override
     public void simpleUpdate(float tpf) {
         super.simpleUpdate(tpf);
+        
+        // 3d audio
+        listener.setLocation(cam.getLocation());
+        listener.setRotation(cam.getRotation());
+        
         Vector3f v;
         Quaternion q;
         
@@ -391,16 +386,16 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
         	v = controllingNode.getLocalRotation().getRotationColumn(0);
         	
         	// calc new speed
-        	if(shipIsAccelerating) {
-	        	if(enableSail && shipCurrentpSpeed >= shipTopSpeed) { // full speed
+        	if(shipIsAccelerating || shipIsAcceleratingDown) {
+	        	if(enableSail && shipCurrentpSpeed >= shipTopSpeed && !shipIsAcceleratingDown) { // full speed
 	        		shipCurrentpSpeed = shipTopSpeed;
 	        		shipIsAccelerating = false;
-	        	} else if(enableSail && shipCurrentpSpeed < shipTopSpeed) { // accelerating
+	        	} else if(enableSail && shipCurrentpSpeed < shipTopSpeed && !shipIsAcceleratingDown) { // accelerating
         			shipCurrentpSpeed += shipAcceleration; // accelerating up
         		} else if(shipCurrentpSpeed < 0) { // halt
 	        		shipIsAccelerating = false;
 	        		shipCurrentpSpeed = 0;
-        		} else if(!enableSail && shipCurrentpSpeed <= shipTopSpeed) {
+        		} else if(!enableSail && shipCurrentpSpeed <= shipTopSpeed || shipIsAcceleratingDown) {
         			shipCurrentpSpeed -= shipAcceleration; // accelerating down
         		}
         	}
@@ -417,7 +412,60 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
         		System.out.println("collided with "+gh.getOverlappingCount()+" objects");
         	}
         }
+        
+        
+        
+        // spawn in stuff!
+        spawnTimer += tpf;
+        if(spawnTimer > spawnInterval && spawnCount < spawnMaxCount) {
+        	spawnTimer = 0;
+        	spawnCount++;
+        	Ship s = new Ship(floatingNode, "spawnedShip"+spawnCount);
+        	float hullHeight = generateRandom(4f,10f);
+			float hullWidth = generateRandom(hullHeight/2,hullHeight);
+			float hullLength = generateRandom(hullHeight*2,hullHeight*10);
+			float waterDepth = generateRandom(hullHeight/4,hullHeight/1.5f);
+			s.setDimentions(hullHeight, hullWidth, hullLength, waterDepth);
+        	s.build();
+        	
+        	//s.getNode().setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/4 , new Vector3f(0,1,0) ));
+        	Vector3f SpawnLocation = new Vector3f(cam.getLocation().x+500f, 0, cam.getLocation().z+500f);
+        	Vector3f travelHere = new Vector3f(cam.getLocation().x, 0, cam.getLocation().z);
+        	
+        	if(travelHere.equals(new Vector3f(0, 0, 0))) {
+        		travelHere = new Vector3f(1,1,1);
+        		SpawnLocation = new Vector3f(SpawnLocation.x+1, SpawnLocation.y+1, SpawnLocation.z+1);
+        	}
+        	/*
+        	Quaternion q2 = new Quaternion();
+        	q2.lookAt(travelHere, Vector3f.UNIT_Y);
+        	*/
+        	Quaternion q2 = new Quaternion().fromAngleAxis( -FastMath.PI/4 , new Vector3f(0,1,0) );
+        	s.getNode().setLocalRotation(q2);
+
+        	//s.getNode().lookAt(travelHere, Vector3f.UNIT_Y);
+        	s.getNode().setLocalTranslation(SpawnLocation);
+        	
+
+        	MotionPath path = new MotionPath();
+            path.addWayPoint(SpawnLocation);
+            path.addWayPoint(travelHere);
+            path.setCycle(false);
+            
+            MotionEvent mover = new MotionEvent(s.getNode(),path);
+            mover.setLoopMode(LoopMode.DontLoop);
+            mover.setSpeed(shipTopSpeed);
+        	mover.play();
+        	
+            System.out.println("spawn:"+SpawnLocation+", travel:"+travelHere+", rotation:"+s.getNode().getLocalRotation());
+        	System.out.println("location:"+new Vector3f(cam.getLocation().x, 0, cam.getLocation().z)+", dir:"+new Vector3f(cam.getDirection().x, 0, cam.getDirection().z));
+        }
     }
+    
+    protected float generateRandom(float min, float max) {
+		Random r = new Random();
+		return r.nextFloat() * (max - min) + min;
+	}
 
 	@Override
 	public void collision(PhysicsCollisionEvent e) {
@@ -536,10 +584,10 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     		island.setLocalScale(new Vector3f(5, 0.2f, 3));
     		//island.getControl(RigidBodyControl.class).getCollisionShape().setScale(island.getLocalScale()); // wtf?
     		
-    		//SphereCollisionShape c = new SphereCollisionShape(width/2);
-    		//c.setScale(island.getLocalScale()); // wtf?
+    		SphereCollisionShape c = new SphereCollisionShape(width/2);
+    		c.setScale(island.getLocalScale()); // wtf?
     		//c.setScale(new Vector3f(2.3f,0.1f,1.4f));
-    		//GhostControl ghostControl = new GhostControl(c);
+    		GhostControl ghostControl = new GhostControl(c);
 
     		node.attachChild(island);
     		
@@ -551,15 +599,29 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     		
     		parentNode.attachChild(node);
     		
-
-    		CollisionShape shape = CollisionShapeFactory.createDynamicMeshShape(island);
     		
-    		island.addControl(new RigidBodyControl(shape, 1.0f));
-    		island.getControl(RigidBodyControl.class).setKinematic(true);
+    		//island.getControl(RigidBodyControl.class).setKinematic(true);
     		//island.getControl(RigidBodyControl.class).getCollisionShape().setScale(new Vector3f(2.3f,1f,1.4f));
     		
-    		//island.addControl(ghostControl);
-            //getPhysicsSpace().add(island);
+    		island.addControl(ghostControl);
+    		getPhysicsSpace().add(island);
+    		
+    		
+    		// Launch_of_the_Black_Pearl.wav from http://www.youtube.com/watch?v=PJUmKF0w1fw
+    		/*
+    		AudioNode waves = new AudioNode(assetManager, "Sound/Environment/Ocean Waves.ogg", false);
+    		waves.setLooping(true);
+    		waves.setPositional(true);
+    		waves.setLocalTranslation(Vector3f.ZERO.clone());
+    		waves.setVolume(2);
+    		waves.setDirectional(true);
+    		waves.setDirection(new Vector3f(1,1,1));
+    		waves.setRefDistance(5f);
+    		waves.setReverbEnabled(true);
+    		getNode().attachChild(waves);
+    		//audioRenderer.playSource(waves);
+    		waves.play();
+    		*/
     	}
     	
     	@Override
@@ -579,12 +641,38 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 			//System.out.println("Clicked on island");
 			actionListener.onAction("Earthquake", true, 0);
 		}
+		
 
 		@Override
 		public void onCollide(String withWhatId, PhysicsCollisionEvent e) {
-			onClick();
+			Vector3f v;
+			if(e.getNodeA().getUserData("class") != null && e.getNodeA().getUserData("class") instanceof Island && e.getNodeA().getUserData("class") == this) {
+				// other is A
+				v = e.getLocalPointA();
+			} else {
+				v = e.getLocalPointB();
+			}
+			v.multLocal(-2, 0, -2);
+			v.y = getNode().getLocalTranslation().y;
+			//getNode().move(v.x, 0, v.z);
+			final MotionPath path = new MotionPath();
+			path.addWayPoint(getNode().getLocalTranslation());
+			path.addWayPoint(v);
+			MotionEvent motionControl = new MotionEvent(getNode(),path);
+			
+			path.addListener( new MotionPathListener() {
+				@Override
+				public void onWayPointReach(MotionEvent arg0, int wayPointIndex) {
+					if (path.getNbWayPoints() == wayPointIndex + 1) {
+				      	
+				    }
+				}
+			});
+			
+			motionControl.setSpeed(20f);
+			motionControl.play();
+			
 		}
-    	
     }
     
     
@@ -675,8 +763,10 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     			System.out.println("Creating mast Node at x="+lengthFromFront);
         		float mastHeight = 2*hullHeight;
         		
-	    		Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-	    		mat.setColor("Color", ColorRGBA.Brown);
+	    		Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+	    		mat.setBoolean("UseMaterialColors",true);
+	    		mat.setColor("Ambient", ColorRGBA.Brown);
+	    		mat.setColor("Diffuse", ColorRGBA.Brown); 
         		
 	    		Cylinder c = new Cylinder(16, 16, 0.5f, mastHeight, true);
 	    		Geometry mast = new Geometry("mast", c);
@@ -712,7 +802,11 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 	    		Box b = new Box(0.1f, hullWidth/2, hullHeight*2/6);
 	    		Geometry sail = new Geometry("sail", b);
 	    		Material mat2 = mat.clone();
-	    		mat2.setColor("Color", ColorRGBA.White);
+	    		mat2.setBoolean("UseMaterialColors",true);
+	    		mat2.setColor("Ambient", ColorRGBA.White);
+	    		mat2.setColor("Diffuse", ColorRGBA.White);
+	    		mat2.setColor("Specular",ColorRGBA.White);
+	    		mat2.setFloat("Shininess", 5f);
 	    		sail.setMaterial(mat2);
 	    		sail.setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/2 , new Vector3f(1,0,0) ));
 	    		sail.setLocalTranslation(new Vector3f(-0.7f, hullHeight+hullHeight-hullHeight*3/6, 0));
@@ -720,7 +814,9 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 	    		Box b2 = new Box(0.1f, hullHeight/12, hullHeight/12);
 	    		Geometry flag = new Geometry("flag", b2);
 	    		Material mat3 = mat.clone();
-	    		mat3.setColor("Color", ColorRGBA.Black);
+	    		mat3.setBoolean("UseMaterialColors",true);
+	    		mat3.setColor("Ambient", ColorRGBA.Black);
+	    		mat3.setColor("Diffuse", ColorRGBA.Black);
 	    		flag.setMaterial(mat3);
 	    		flag.setLocalRotation(new Quaternion().fromAngleAxis( FastMath.PI/2 , new Vector3f(0,1,0) ));
 	    		flag.setLocalTranslation(new Vector3f(hullHeight/12, mastHeight+hullHeight/10+hullHeight/12, 0));
@@ -742,10 +838,10 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     	private void addFloor() {
     		//http://code.google.com/p/jmonkeyengine/source/browse/trunk/engine/src/test/jme3test/bullet/TestBrickWall.java
     		
-    		Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+    		Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
     		Texture t = assetManager.loadTexture("Textures/wood2.jpg");
     		t.setWrap(WrapMode.Repeat);
-            mat.setTexture("ColorMap", t);
+            mat.setTexture("DiffuseMap", t);
     		
     		Box floorBox = new Box(hullLength/2-hullLength/6, 0.1f, hullWidth/2);
             //floorBox.scaleTextureCoordinates(new Vector2f(3, 6));
@@ -761,10 +857,10 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     	}
     	
     	private void addAftercastle() {
-    		Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+    		Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
     		Texture t = assetManager.loadTexture("Textures/wood2.jpg");
     		t.setWrap(WrapMode.Repeat);
-            mat.setTexture("ColorMap", t);
+            mat.setTexture("DiffuseMap", t);
             
     		Box b = new Box(hullLength/12, hullHeight/4, hullWidth/2);
             Geometry castle = new Geometry("aftercastle", b);
@@ -775,8 +871,10 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
     	}
     	
     	private void addBowsprit() {
-			Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-    		mat.setColor("Color", ColorRGBA.Brown);
+			Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+			mat.setBoolean("UseMaterialColors",true);
+			mat.setColor("Ambient", ColorRGBA.Brown);
+			mat.setColor("Diffuse", ColorRGBA.Brown);
     		
     		Cylinder c = new Cylinder(16, 16, 0.2f, hullHeight, true);
 			Geometry bowsprit = new Geometry("bowsprit", c);
@@ -824,9 +922,9 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
             texCoord[4] = new Vector2f(1/6f,1/6f);
             texCoord[5] = new Vector2f(1/6f,1/6f);
             texCoord[6] = new Vector2f(5/6f,5/6f);
-            texCoord[7] = new Vector2f(5/6f,5/6f);
+            texCoord[7] = new Vector2f(1,1);
             texCoord[8] = new Vector2f(5/6f,5/6f);
-            texCoord[9] = new Vector2f(5/6f,5/6f);
+            texCoord[9] = new Vector2f(1,1);
             texCoord[10] = new Vector2f(1,1);
             
             int [] indexesLeft = {
@@ -877,13 +975,13 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
             
             
             Geometry hull = new Geometry("hull", m);
-            Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+            Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
             //mat.setColor("Color", ColorRGBA.Brown);
             
             
             Texture t = assetManager.loadTexture("Textures/wood2.jpg");
     		t.setWrap(WrapMode.Repeat);
-            mat.setTexture("ColorMap", t);
+            mat.setTexture("DiffuseMap", t);
 
             hull.setMaterial(mat);
 
@@ -951,6 +1049,27 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 			
 			if(!enableSail) {
 				controllingNode = getNode();
+				
+				// instructions
+				guiNode.detachAllChildren();
+				guiFont = assetManager.loadFont("Interface/Fonts/Default.fnt");
+				BitmapText helloText = new BitmapText(guiFont, false);
+				helloText.setSize(guiFont.getCharSet().getRenderedSize());
+				helloText.setText("Fire with the cannons using 0,1,...,9 or left and right arrows! Move with WASD. ");
+				helloText.setLocalTranslation(0, helloText.getLineHeight(), 0);
+				guiNode.attachChild(helloText);
+				toogleAim();
+				
+				// play pirate adventure music!
+
+	    		// Launch_of_the_Black_Pearl.wav from http://www.youtube.com/watch?v=PJUmKF0w1fw
+	    		AudioNode pirateAdventureMusic = new AudioNode(assetManager, "Sounds/Launch_of_the_Black_Pearl.wav", false);
+	    		pirateAdventureMusic.setLooping(true);
+	    		pirateAdventureMusic.setVolume(1);
+	    		pirateAdventureMusic.setName("pirateAdventureMusic");
+	    		getNode().attachChild(pirateAdventureMusic);
+	    		pirateAdventureMusic.play();
+				
 				// add cannon listeners
 				for(Node n : cannons) {
 					if(cannons.indexOf(n)+1 <= 11) {
@@ -1010,6 +1129,16 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 				};
 				inputManager.addListener(shipsActionListener, args);
 			} else {
+				// remove gui
+				guiNode.detachAllChildren();
+				toogleAim();
+				
+				// remove sound
+				if(getNode().getChild("pirateAdventureMusic") != null && getNode().getChild("pirateAdventureMusic") instanceof AudioNode) {
+					((AudioNode) getNode().getChild("pirateAdventureMusic")).stop();
+					getNode().getChild("pirateAdventureMusic").removeFromParent();
+				}
+				
 				// remove cannon listeners
 				for(Node n : cannons) {
 					if(cannons.indexOf(n)+1 <= 11) {
@@ -1023,17 +1152,31 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 		
 		private void startSinkProcess() {
 
-	        MotionPath shipPath = new MotionPath();
+	        final MotionPath shipPath = new MotionPath();
 	        shipPath.addWayPoint(getNode().getLocalTranslation());
 	        shipPath.addWayPoint(new Vector3f(
 	        		getNode().getLocalTranslation().x,
-	        		getNode().getLocalTranslation().y-50f,
+	        		getNode().getLocalTranslation().y-100f,
 	        		getNode().getLocalTranslation().z
     		));
 	        shipPath.setCycle(false);
 	        MotionEvent SinkShip = new MotionEvent(getNode(),shipPath);
 	        SinkShip.setLoopMode(LoopMode.DontLoop);
 	        SinkShip.setSpeed(5f);
+	        shipPath.addListener(new MotionPathListener() {
+
+				@Override
+				public void onWayPointReach(MotionEvent arg0, int wayPointIndex) {
+					if (shipPath.getNbWayPoints() == wayPointIndex + 1) {
+						getPhysicsSpace().remove(getNode().getChild("hullNode").getControl(0));
+						getNode().removeFromParent();
+						spawnMaxCount--;
+				    } else {
+				    	getNode().rotate(new Quaternion(1, 0, 0, 90f));
+				    }
+				}
+	        	
+	        });
 	        SinkShip.play();
 		}
 
@@ -1098,23 +1241,32 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 		}
 
 		public void build() {
-			Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+			Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+			mat.setBoolean("UseMaterialColors",true);
 			if(type == 0) {
-    			mat.setColor("Color", ColorRGBA.Gray);
+    			mat.setColor("Ambient", ColorRGBA.Black);
+    			mat.setColor("Diffuse", ColorRGBA.Black);
     		} else if(type == 1) {
-    			mat.setColor("Color", ColorRGBA.Black);
+    			mat.setColor("Ambient", ColorRGBA.Black);
+    			mat.setColor("Diffuse", ColorRGBA.Black);
     		} else if(type == 2) {
-    			mat.setColor("Color", ColorRGBA.Red);
+    			mat.setColor("Ambient", ColorRGBA.Black);
+    			mat.setColor("Diffuse", ColorRGBA.Black);
     		} else if(type == 3) {
-    			mat.setColor("Color", ColorRGBA.Blue);
+    			mat.setColor("Ambient", ColorRGBA.Black);
+    			mat.setColor("Diffuse", ColorRGBA.Black);
     		} else if(type == 4) {
-    			mat.setColor("Color", ColorRGBA.Green);
+    			mat.setColor("Ambient", ColorRGBA.Black);
+    			mat.setColor("Diffuse", ColorRGBA.Black);
     		} else if(type == 5) {
-    			mat.setColor("Color", ColorRGBA.DarkGray);
+    			mat.setColor("Ambient", ColorRGBA.Black);
+    			mat.setColor("Diffuse", ColorRGBA.Black);
     		} else if(type == 6) {
-    			mat.setColor("Color", ColorRGBA.Pink);
+    			mat.setColor("Ambient", ColorRGBA.Black);
+    			mat.setColor("Diffuse", ColorRGBA.Black);
     		} else {
-    			mat.setColor("Color", ColorRGBA.Black);
+    			mat.setColor("Ambient", ColorRGBA.Black);
+    			mat.setColor("Diffuse", ColorRGBA.Black);
     		}
 			
     		
@@ -1127,11 +1279,11 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 			sphere = new Sphere(32, 32, radie/1.5f, true, false);
 		    sphere.setTextureMode(TextureMode.Projected);
 		    
-		    stone_mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+		    stone_mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
 		    TextureKey key2 = new TextureKey("Textures/Terrain/Rock/Rock.PNG");
 		    key2.setGenerateMips(true);
 		    Texture tex2 = assetManager.loadTexture(key2);
-		    stone_mat.setTexture("ColorMap", tex2);
+		    stone_mat.setTexture("DiffuseMap", tex2);
 		    
 		    AudioNode fireSound = new AudioNode(assetManager, "Sound/Effects/Gun.wav");
 		    fireSound.setPositional(true);
@@ -1144,6 +1296,8 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 
     		// https://code.google.com/p/jmonkeyengine/source/browse/trunk/engine/src/test/jme3test/effect/TestExplosionEffect.java
     		
+		    
+		    
 		}
 
 		@Override
@@ -1220,7 +1374,7 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 					if(type == 1 && b instanceof Ship) {
 						((Ship) b).startSinkProcess();
 					} else if(type == 1) {
-						otherSpatial.removeFromParent();
+						//otherSpatial.removeFromParent(); // maybe not :o
 					}
 					// 3 = scale up
 					else if(type == 2 && b instanceof MyNode) {
@@ -1273,12 +1427,24 @@ public class SimpleScene extends SimpleApplication implements PhysicsCollisionLi
 			for(Spatial s : children) {
 				if(s instanceof Geometry) {
 					Random rand = new Random();
-					((Geometry) s).getMaterial().setColor("Color", new ColorRGBA(
-						rand.nextFloat(),
-						rand.nextFloat(),
-						rand.nextFloat(),
-						1f
-					));
+					
+					// tool to check if material is unshaded... D:
+					try {
+						((Geometry) s).getMaterial().setColor("Ambient", new ColorRGBA(
+								rand.nextFloat(),
+								rand.nextFloat(),
+								rand.nextFloat(),
+								1f
+							));
+						((Geometry) s).getMaterial().setColor("Diffuse", new ColorRGBA(
+							rand.nextFloat(),
+							rand.nextFloat(),
+							rand.nextFloat(),
+							1f
+						));
+					} catch (Exception e) {
+						
+					}
 				} else if(s instanceof Node) {
 					ChangeColor((Node) s);
 				}
